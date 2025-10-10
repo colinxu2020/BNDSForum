@@ -41,7 +41,6 @@ def logout():
 
 
 @bp.route("/register", methods=["GET", "POST"])
-@login_required
 def register():
     if not current_user.is_admin:
         flash("只有管理员可以创建用户", "error")
