@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}注册用户 - BNDS Blog{% endblock %}
+{% block content %}
+<section class="card form-card">
+    <header class="form-header">
+        <h1>创建账号</h1>
+        <p class="form-tip">管理员可为同学指定角色与固定标签，便于自动打标。</p>
+    </header>
+    <form method="post" class="form-grid">
+        <div class="form-field">
+            <label for="username">用户名</label>
+            <input type="text" id="username" name="username" autocomplete="username" required>
+        </div>
+        <div class="form-field">
+            <label for="password">密码</label>
+            <input type="password" id="password" name="password" autocomplete="new-password" required>
+        </div>
+        <div class="form-field">
+            <label for="role">角色</label>
+            <select id="role" name="role">
+                {% for value, label in roles %}
+                    <option value="{{ value }}">{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-field">
+            <label for="constant_tags">固定标签（用逗号分隔）</label>
+            <input type="text" id="constant_tags" name="constant_tags" placeholder="例如：社团, 科技">
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="button primary">保存</button>
+            <a class="button ghost" href="{{ url_for('auth.login') }}">返回登录</a>
+        </div>
+    </form>
+</section>
+{% endblock %}

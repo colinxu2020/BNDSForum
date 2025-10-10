@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}{{ post['title'] }} - BNDS Blog{% endblock %}
+{% block content %}
+<article class="post-detail card">
+    <header class="post-header">
+        <h1>{{ post['title'] }}</h1>
+        <div class="post-meta">
+            <span>作者：{{ post['author'] }}</span>
+            <span>发布：{{ post['created_at'] }}</span>
+            <span>更新：{{ post['updated_at'] }}</span>
+        </div>
+        {% if post['tags'] %}
+        <div class="post-tags">
+            {% for tag in post['tags'] %}
+                <span class="tag-badge">{{ tag }}</span>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </header>
+    <section class="post-body markdown-body">
+        {{ post['content'] | markdown }}
+    </section>
+</article>
+
+{% if can_edit %}
+    <form class="post-actions" method="post" action="{{ url_for('blog.delete', post_id=post['id']) }}" onsubmit="return confirm('确定要删除这篇文章吗？');">
+        <a class="button" href="{{ url_for('blog.edit', post_id=post['id']) }}">编辑</a>
+        <button type="submit" class="button danger">删除</button>
+    </form>
+{% endif %}
+
+<section class="comments card">
+    <header>
+        <h2>评论</h2>
+        <p class="comment-count">{{ comments | length }} 条讨论</p>
+    </header>
+    {% if comments %}
+        <div class="comment-list">
+            {% for comment in comments %}
+                <article class="comment-item">
+                    <div class="comment-meta">
+                        <strong>{{ comment['author'] }}</strong>
+                        <span>{{ comment['created_at'] }}</span>
+                    </div>
+                    <div class="comment-body markdown-body">
+                        {{ comment['content'] | markdown }}
+                    </div>
+                </article>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p class="empty-state">暂时还没有评论，欢迎留下第一条反馈。</p>
+    {% endif %}
+
+    {% if current_user.is_authenticated %}
+        <div class="comment-form">
+            <h3>发表新评论</h3>
+            <form method="post">
+                <label for="content">评论内容</label>
+                <textarea id="content" name="content" rows="5" placeholder="支持 Markdown 语法，试试 **加粗** 或 ```代码```" required></textarea>
+                <button type="submit" class="button primary">提交评论</button>
+            </form>
+        </div>
+    {% else %}
+        <p class="comment-signin">
+            <a href="{{ url_for('auth.login', next=request.path) }}">登录</a> 后即可参与讨论。
+        </p>
+    {% endif %}
+</section>
+{% endblock %}

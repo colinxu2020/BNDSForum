@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}BNDS Blog{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<div class="page">
+    <header class="site-header">
+        <nav class="top-nav container">
+            <a class="logo" href="{{ url_for('blog.index') }}">BNDS Blog</a>
+            <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="nav-links">
+                <span class="sr-only">切换导航</span>
+                &#9776;
+            </button>
+            <div class="nav-links" id="nav-links">
+                <a href="{{ url_for('blog.index') }}">首页</a>
+                <a href="{{ url_for('tag.tree_view') }}">标签树</a>
+                {% if current_user.is_authenticated %}
+                    <a href="{{ url_for('blog.create') }}">写文章</a>
+                    {% if current_user.is_admin %}
+                        <a href="{{ url_for('admin.dashboard') }}">管理后台</a>
+                    {% endif %}
+                    <a href="{{ url_for('auth.logout') }}">退出（{{ current_user.id }}）</a>
+                {% else %}
+                    <a href="{{ url_for('auth.login') }}">登录</a>
+                {% endif %}
+            </div>
+        </nav>
+    </header>
+
+    <main class="container">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="flash-messages">
+                    {% for category, message in messages %}
+                        <div class="flash {{ category }}">{{ message }}</div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="site-footer">
+        <div class="container">
+            <p>© {{ current_year }} BNDS Blog · 分享校园故事与灵感</p>
+        </div>
+    </footer>
+</div>
+<script>
+    (function () {
+        const toggle = document.querySelector('.nav-toggle');
+        const links = document.querySelector('.nav-links');
+        if (!toggle || !links) return;
+        toggle.addEventListener('click', function () {
+            const expanded = this.getAttribute('aria-expanded') === 'true';
+            this.setAttribute('aria-expanded', (!expanded).toString());
+            links.classList.toggle('is-open', !expanded);
+        });
+    }());
+</script>
+</body>
+</html>

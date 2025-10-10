@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}{{ '编辑文章' if post_id else '撰写文章' }} - BNDS Blog{% endblock %}
+{% block content %}
+<section class="card form-card">
+    <header class="form-header">
+        <h1>{{ '编辑文章' if post_id else '撰写文章' }}</h1>
+        <p class="form-tip">正文支持 Markdown 语法，可直接粘贴图片链接或代码片段。</p>
+    </header>
+
+    {% if error %}
+        <div class="flash error inline">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" class="form-grid">
+        <div class="form-field">
+            <label for="title">标题</label>
+            <input type="text" id="title" name="title" value="{{ title }}" placeholder="输入文章标题" required>
+        </div>
+
+        <div class="form-field">
+            <label for="content">正文</label>
+            <textarea id="content" name="content" rows="14" placeholder="使用 Markdown 编写，例如：# 一级标题、**粗体**、```代码```" required>{{ content }}</textarea>
+        </div>
+
+        {% set constant_list = author_constant_tags if author_constant_tags is defined else current_user.constant_tags %}
+        <div class="form-field">
+            <label>自动附加标签</label>
+            <div class="tag-collection">
+                {% for tag in constant_list %}
+                    <span class="tag-badge">{{ tag }}</span>
+                {% else %}
+                    <span class="tag-badge muted">暂无固定标签</span>
+                {% endfor %}
+            </div>
+        </div>
+
+        {% if extra_tags is defined and extra_tags %}
+            <div class="form-field">
+                <label>作者自定义标签</label>
+                <div class="tag-collection">
+                    {% for tag in extra_tags %}
+                        <span class="tag-badge">{{ tag }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+        {% endif %}
+
+        <div class="form-field">
+            <label for="normal_tags">选择常用标签</label>
+            <select id="normal_tags" name="normal_tags" multiple size="8">
+                {% for tag in available_tags %}
+                    <option value="{{ tag }}" {% if tag in selected_tags %}selected{% endif %}>{{ tag }}</option>
+                {% endfor %}
+            </select>
+            <p class="field-hint">按住 Ctrl 或 Command 键可多选标签。</p>
+        </div>
+
+        <div class="form-actions">
+            <button type="submit" class="button primary">保存</button>
+            <a class="button ghost" href="{{ url_for('blog.index') }}">返回列表</a>
+        </div>
+    </form>
+</section>
+{% endblock %}

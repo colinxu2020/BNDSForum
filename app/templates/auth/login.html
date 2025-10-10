@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}登录 - BNDS Blog{% endblock %}
+{% block content %}
+<section class="card form-card narrow">
+    <header class="form-header">
+        <h1>欢迎回来</h1>
+        <p class="form-tip">输入账号密码即可开始创作或留言。</p>
+    </header>
+    <form method="post" class="form-grid">
+        <div class="form-field">
+            <label for="username">用户名</label>
+            <input type="text" id="username" name="username" autocomplete="username" required>
+        </div>
+        <div class="form-field">
+            <label for="password">密码</label>
+            <input type="password" id="password" name="password" autocomplete="current-password" required>
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="button primary">登录</button>
+            <a class="button ghost" href="{{ url_for('auth.register') }}">注册新账号</a>
+        </div>
+    </form>
+</section>
+{% endblock %}

@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}标签节点详情 - BNDS Blog{% endblock %}
+{% block content %}
+<a href="{{ url_for('tag.tree_view') }}" class="button ghost">返回标签树</a>
+
+<section class="tag-summary card">
+    <h1>{{ node['tag'] or '根节点' }}</h1>
+    <p class="tag-path">
+        标签路径：
+        {% if stats["path_tags"] %}
+            {{ stats["path_tags"] | join(' / ') }}
+        {% else %}
+            该节点囊括所有文章
+        {% endif %}
+    </p>
+</section>
+
+<section class="post-list">
+    <h2>相关文章</h2>
+    {% if stats["posts"] %}
+        {% for post in stats["posts"] %}
+            <article class="post-card card">
+                <header>
+                    <h3><a href="{{ url_for('blog.detail', post_id=post['id']) }}">{{ post['title'] }}</a></h3>
+                    <div class="post-meta">
+                        <span>作者：{{ post['author'] }}</span>
+                        <span>发布：{{ post['created_at'] }}</span>
+                    </div>
+                </header>
+                {% if post['tags'] %}
+                    <div class="post-tags">
+                        {% for tag in post['tags'] %}
+                            <span class="tag-badge">{{ tag }}</span>
+                        {% endfor %}
+                    </div>
+                {% endif %}
+                <div class="post-excerpt markdown-body clamp-3">
+                    {{ post['content'] | markdown }}
+                </div>
+                <a class="link-more" href="{{ url_for('blog.detail', post_id=post['id']) }}">阅读全文</a>
+            </article>
+        {% endfor %}
+    {% else %}
+        <p class="empty-state">暂时没有匹配到文章。</p>
+    {% endif %}
+</section>
+
+<section class="tag-users card">
+    <h2>具备此标签组合的用户</h2>
+    {% if stats["eligible_users"] %}
+        <div class="responsive-table">
+            <table>
+                <thead>
+                <tr>
+                    <th>用户名</th>
+                    <th>固定标签</th>
+                    <th>是否已发布文章</th>
+                </tr>
+                </thead>
+                <tbody>
+                {% for item in stats["eligible_users"] %}
+                    <tr>
+                        <td>{{ item["username"] }}</td>
+                        <td>
+                            {% if item["constant_tags"] %}
+                                {{ item["constant_tags"] | join(', ') }}
+                            {% else %}
+                                暂无
+                            {% endif %}
+                        </td>
+                        <td>{{ "是" if item["has_post"] else "否" }}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="empty-state">暂无符合条件的用户。</p>
+    {% endif %}
+</section>
+{% endblock %}

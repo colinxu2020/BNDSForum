@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}标签体系图 - BNDS Blog{% endblock %}
+{% macro render_node(node) -%}
+    {% set info = stats.get(node['id']) %}
+    <li>
+        <div class="tag-node-card">
+            <div class="tag-node-header">
+                <h3>{{ node['tag'] or '根节点' }}</h3>
+                <span class="muted-text">文章 {{ info["posts"] | length if info else 0 }} 篇</span>
+            </div>
+            <p class="tag-path">
+                路径：
+                {% if info and info["path_tags"] %}
+                    {{ info["path_tags"] | join(' / ') }}
+                {% else %}
+                    所有标签
+                {% endif %}
+            </p>
+            <a class="link-more" href="{{ url_for('tag.node_detail', node_id=node['id']) }}">查看详情</a>
+        </div>
+        {% if node['children'] %}
+            <ul class="tag-tree-children">
+                {% for child in node['children'] %}
+                    {{ render_node(child) }}
+                {% endfor %}
+            </ul>
+        {% endif %}
+    </li>
+{%- endmacro %}
+{% block content %}
+<section class="card tree-card">
+    <h1>标签体系图</h1>
+    <p class="form-tip">从根节点到子节点依次代表更细的分类，点击节点可查看文章与作者统计。</p>
+    <ul class="tag-tree">
+        {{ render_node(hierarchy) }}
+    </ul>
+</section>
+{% endblock %}

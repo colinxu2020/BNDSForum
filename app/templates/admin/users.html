@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}用户管理 - BNDS Blog{% endblock %}
+{% block content %}
+<section class="card">
+    <header class="form-header">
+        <h1>用户管理</h1>
+        <p class="form-tip">调整用户角色与固定标签，帮助系统自动归类文章。</p>
+    </header>
+
+    <a class="button primary" href="{{ url_for('auth.register') }}">手动创建新用户</a>
+
+    <div class="responsive-table">
+        <table>
+            <thead>
+            <tr>
+                <th>用户名</th>
+                <th>角色</th>
+                <th>固定标签</th>
+                <th>操作</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for user in users %}
+                {% set form_id = 'user-form-' ~ loop.index %}
+                <tr>
+                    <td>{{ user['username'] }}</td>
+                    <td>
+                        <select name="role" form="{{ form_id }}">
+                            <option value="user" {% if user['role'] == 'user' %}selected{% endif %}>普通用户</option>
+                            <option value="admin" {% if user['role'] == 'admin' %}selected{% endif %}>管理员</option>
+                        </select>
+                    </td>
+                    <td>
+                        <input type="text" name="constant_tags" form="{{ form_id }}" value="{{ user['constant_tags'] | join(', ') }}" placeholder="例如：摄影, 校园生活">
+                    </td>
+                    <td>
+                        <form id="{{ form_id }}" method="post" action="{{ url_for('admin.update_user') }}">
+                            <input type="hidden" name="username" value="{{ user['username'] }}">
+                            <button type="submit" class="button primary">保存</button>
+                        </form>
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}
