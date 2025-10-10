@@ -42,15 +42,16 @@ def logout():
 
 @bp.route("/register", methods=["GET", "POST"])
 def register():
-    if not current_user.is_admin:
-        flash("只有管理员可以创建用户", "error")
-        return redirect(url_for("blog.index"))
+    #if not current_user.is_admin:
+    #    flash("只有管理员可以创建用户", "error")
+    #    return redirect(url_for("blog.index"))
 
     datastore = get_datastore()
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
-        role = request.form.get("role", "user")
+        #role = request.form.get("role", "user")
+        role = "user"
         constant_tags = [tag.strip() for tag in request.form.get("constant_tags", "").split(",") if tag.strip()]
 
         if not username or not password:
@@ -66,5 +67,5 @@ def register():
 
     return render_template(
         "auth/register.html",
-        roles=[("user", "普通用户"), ("admin", "管理员")],
+        roles=[("user", "普通用户")],
     )
