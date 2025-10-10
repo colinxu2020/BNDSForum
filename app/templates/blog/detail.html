@@ -55,9 +55,30 @@
     {% if current_user.is_authenticated %}
         <div class="comment-form">
             <h3>发表新评论</h3>
-            <form method="post">
+            <form method="post" class="comment-editor-form">
                 <label for="content">评论内容</label>
-                <textarea id="content" name="content" rows="5" placeholder="支持 Markdown 语法，试试 **加粗** 或 ```代码```" required></textarea>
+                <div class="markdown-editor compact" data-markdown-editor>
+                    <div class="markdown-toolbar" role="toolbar" aria-label="Markdown 工具栏">
+                        <button type="button" class="markdown-tool" data-md-prefix="# " title="插入一级标题">#</button>
+                        <button type="button" class="markdown-tool" data-md-surround="**" title="加粗">Bold</button>
+                        <button type="button" class="markdown-tool" data-md-surround="*" title="斜体">Italic</button>
+                        <button type="button" class="markdown-tool" data-md-surround="`" title="行内代码">Code</button>
+                        <button type="button" class="markdown-tool" data-md-prefix="- " title="无序列表">List</button>
+                    </div>
+                    <div class="markdown-panels">
+                        <div class="markdown-panel markdown-panel-editor">
+                            <textarea id="content"
+                                      name="content"
+                                      rows="5"
+                                      placeholder="支持 Markdown 语法，比如 **加粗** 和 ```代码```"
+                                      required
+                                      data-markdown-source></textarea>
+                        </div>
+                        <div class="markdown-panel markdown-panel-preview">
+                            <div class="markdown-preview markdown-body" aria-live="polite"></div>
+                        </div>
+                    </div>
+                </div>
                 <button type="submit" class="button primary">提交评论</button>
             </form>
         </div>

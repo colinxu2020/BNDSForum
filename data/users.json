@@ -3,7 +3,9 @@
     "username": "admin",
     "password_hash": "scrypt:32768:8:1$kNyoWanFUaqcMsTf$f8fdb494b976624ae2651314b2b70e73a5a15b39dd9d9d6e8016a5ec87475102f09ba3f1a38efa756e77a613a92528f06345092856253031e4edc794c1a0ceaf",
     "role": "admin",
-    "constant_tags": []
+    "constant_tags": [
+      "OIFC"
+    ]
   },
   {
     "username": "test",

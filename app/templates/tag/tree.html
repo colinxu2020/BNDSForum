@@ -2,24 +2,30 @@
 {% block title %}标签体系图 - BNDS Blog{% endblock %}
 {% macro render_node(node) -%}
     {% set info = stats.get(node['id']) %}
-    <li>
+    {% set child_id = 'tag-children-' ~ node['id'] %}
+    <li class="tag-node{% if node['children'] %} has-children{% endif %}">
         <div class="tag-node-card">
             <div class="tag-node-header">
+                {% if node['children'] %}
+                    <button class="tag-toggle" type="button" aria-expanded="true" aria-controls="{{ child_id }}" data-toggle="#{{ child_id }}" title="折叠/展开">
+                        <span class="tag-toggle-icon"></span>
+                    </button>
+                {% endif %}
                 <h3>{{ node['tag'] or '根节点' }}</h3>
-                <span class="muted-text">文章 {{ info["posts"] | length if info else 0 }} 篇</span>
+                <span class="muted-text">共有 {{ info["posts"] | length if info else 0 }} 篇</span>
             </div>
             <p class="tag-path">
-                路径：
+                ·路径
                 {% if info and info["path_tags"] %}
                     {{ info["path_tags"] | join(' / ') }}
                 {% else %}
-                    所有标签
+                    根部标签
                 {% endif %}
             </p>
             <a class="link-more" href="{{ url_for('tag.node_detail', node_id=node['id']) }}">查看详情</a>
         </div>
         {% if node['children'] %}
-            <ul class="tag-tree-children">
+            <ul class="tag-tree-children" id="{{ child_id }}">
                 {% for child in node['children'] %}
                     {{ render_node(child) }}
                 {% endfor %}

@@ -25,13 +25,19 @@
                 <tr>
                     <td>{{ user['username'] }}</td>
                     <td>
-                        <select name="role" form="{{ form_id }}">
-                            <option value="user" {% if user['role'] == 'user' %}selected{% endif %}>普通用户</option>
-                            <option value="admin" {% if user['role'] == 'admin' %}selected{% endif %}>管理员</option>
-                        </select>
+                        <div class="table-control select-control">
+                            <div class="select-shell">
+                                <select name="role" form="{{ form_id }}" class="table-select">
+                                    <option value="user" {% if user['role'] == 'user' %}selected{% endif %}>普通用户</option>
+                                    <option value="admin" {% if user['role'] == 'admin' %}selected{% endif %}>管理员</option>
+                                </select>
+                            </div>
+                        </div>
                     </td>
                     <td>
-                        <input type="text" name="constant_tags" form="{{ form_id }}" value="{{ user['constant_tags'] | join(', ') }}" placeholder="例如：摄影, 校园生活">
+                        <div class="table-control">
+                            <input type="text" name="constant_tags" form="{{ form_id }}" value="{{ user['constant_tags'] | join(', ') }}" placeholder="例如：电影, 校园生活" class="table-input">
+                        </div>
                     </td>
                     <td>
                         <form id="{{ form_id }}" method="post" action="{{ url_for('admin.update_user') }}">
