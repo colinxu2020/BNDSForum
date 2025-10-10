@@ -52,7 +52,8 @@ def register():
         password = request.form.get("password", "")
         #role = request.form.get("role", "user")
         role = "user"
-        constant_tags = [tag.strip() for tag in request.form.get("constant_tags", "").split(",") if tag.strip()]
+        #constant_tags = [tag.strip() for tag in request.form.get("constant_tags", "").split(",") if tag.strip()]
+        constant_tags = []
 
         if not username or not password:
             flash("用户名和密码不能为空", "error")
