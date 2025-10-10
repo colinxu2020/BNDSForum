@@ -7,14 +7,21 @@
         marked.setOptions({
             gfm: true,
             breaks: true,
+            langPrefix: 'language-',
             highlight: function (code, lang) {
                 if (typeof hljs === 'undefined') {
                     return code;
                 }
-                if (lang && hljs.getLanguage(lang)) {
-                    return hljs.highlight(code, { language: lang }).value;
+                try {
+                    if (lang && hljs.getLanguage(lang)) {
+                        return hljs.highlight(code, { language: lang, ignoreIllegals: true }).value;
+                    }
+                    // 当未指定或识别不到语言时，使用自动检测
+                    return hljs.highlightAuto(code).value;
+                } catch (e) {
+                    // 兜底：发生异常则返回原文，避免渲染中断
+                    return code;
                 }
-                return hljs.highlightAuto(code).value;
             }
         });
     }
@@ -24,6 +31,14 @@
             return;
         }
         target.querySelectorAll('pre code').forEach(function (block) {
+            // 若已由 marked 的回调产生了内联高亮（存在 span 等），补充 hljs 类以启用样式
+            if (block.firstElementChild && !block.classList.contains('hljs')) {
+                block.classList.add('hljs');
+            }
+            // 避免重复处理已高亮的节点
+            if (block.classList.contains('hljs') || block.firstElementChild) {
+                return;
+            }
             hljs.highlightElement(block);
         });
     }
@@ -57,7 +72,7 @@
     function surroundSelection(cm, token) {
         var doc = cm.getDoc();
         var selections = doc.listSelections();
-        doc.operation(function () {
+        cm.operation(function () {
             selections.forEach(function (sel) {
                 var from = sel.from();
                 var to = sel.to();
@@ -76,7 +91,7 @@
     function prefixLines(cm, prefix) {
         var doc = cm.getDoc();
         var selections = doc.listSelections();
-        doc.operation(function () {
+        cm.operation(function () {
             selections.forEach(function (sel) {
                 var start = Math.min(sel.anchor.line, sel.head.line);
                 var end = Math.max(sel.anchor.line, sel.head.line);
@@ -95,7 +110,7 @@
     function fenceBlock(cm, fence) {
         var doc = cm.getDoc();
         var selections = doc.listSelections();
-        doc.operation(function () {
+        cm.operation(function () {
             selections.forEach(function (sel) {
                 var from = sel.from();
                 var to = sel.to();
