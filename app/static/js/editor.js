@@ -1,83 +1,6 @@
-/* global CodeMirror, marked, hljs, renderMathInElement */
+/* global CodeMirror, MdKatexRenderer */
 (function () {
-    function normalizeMathHtml(html) {
-        if (!html || html.indexOf('<br') === -1) {
-            return html;
-        }
-        return html.replace(/(\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\])/g, function (segment) {
-            return segment.replace(/<br\s*\/?>/gi, '\n');
-        });
-    }
-
-    function configureMarked() {
-        if (typeof marked === 'undefined') {
-            return;
-        }
-        marked.setOptions({
-            gfm: true,
-            breaks: true,
-            langPrefix: 'language-',
-            highlight: function (code, lang) {
-                if (typeof hljs === 'undefined') {
-                    return code;
-                }
-                try {
-                    if (lang && hljs.getLanguage(lang)) {
-                        return hljs.highlight(code, { language: lang, ignoreIllegals: true }).value;
-                    }
-                    // 当未指定或识别不到语言时，使用自动检测
-                    return hljs.highlightAuto(code).value;
-                } catch (e) {
-                    // 兜底：发生异常则返回原文，避免渲染中断
-                    return code;
-                }
-            }
-        });
-    }
-
-    function applyHighlight(target) {
-        if (typeof hljs === 'undefined') {
-            return;
-        }
-        target.querySelectorAll('pre code').forEach(function (block) {
-            // 若已由 marked 的回调产生了内联高亮（存在 span 等），补充 hljs 类以启用样式
-            if (block.firstElementChild && !block.classList.contains('hljs')) {
-                block.classList.add('hljs');
-            }
-            // 避免重复处理已高亮的节点
-            if (block.classList.contains('hljs') || block.firstElementChild) {
-                return;
-            }
-            hljs.highlightElement(block);
-        });
-    }
-
-    function applyMath(target) {
-        if (typeof renderMathInElement !== 'function') {
-            return;
-        }
-        renderMathInElement(target, {
-            delimiters: [
-                { left: '$$', right: '$$', display: true },
-                { left: '$', right: '$', display: false },
-                { left: '\\(', right: '\\)', display: false },
-                { left: '\\[', right: '\\]', display: true }
-            ],
-            throwOnError: false
-        });
-    }
-
-    function enhanceStaticMarkdown() {
-        document.querySelectorAll('.markdown-body').forEach(function (section) {
-            if (section.hasAttribute('data-md-enhanced')) {
-                return;
-            }
-            section.setAttribute('data-md-enhanced', 'true');
-            section.innerHTML = normalizeMathHtml(section.innerHTML);
-            applyHighlight(section);
-            applyMath(section);
-        });
-    }
+    'use strict';
 
     function surroundSelection(cm, token) {
         var doc = cm.getDoc();
@@ -124,11 +47,9 @@
             selections.forEach(function (sel) {
                 var from = sel.from();
                 var to = sel.to();
-                var selected = doc.getRange(from, to);
-                if (!selected) {
-                    selected = '';
-                }
-                var block = fence + '\n' + selected + (selected && !selected.endsWith('\n') ? '\n' : '') + fence + '\n';
+                var selected = doc.getRange(from, to) || '';
+                var needsTrailingNewline = selected && !selected.endsWith('\n');
+                var block = fence + '\n' + selected + (needsTrailingNewline ? '\n' : '') + fence + '\n';
                 doc.replaceRange(block, from, to);
             });
         });
@@ -160,6 +81,11 @@
         if (typeof CodeMirror === 'undefined') {
             return;
         }
+        if (typeof MdKatexRenderer === 'undefined') {
+            return;
+        }
+        MdKatexRenderer.configure();
+
         document.querySelectorAll('.markdown-editor').forEach(function (container) {
             var textarea = container.querySelector('textarea[data-markdown-source]');
             var preview = container.querySelector('.markdown-preview');
@@ -167,6 +93,7 @@
                 return;
             }
             container.setAttribute('data-editor-loaded', 'true');
+
             var isCompact = container.classList.contains('compact');
             var cm = CodeMirror.fromTextArea(textarea, {
                 mode: 'markdown',
@@ -179,21 +106,24 @@
                 }
             });
             cm.setSize('100%', '100%');
+
             var renderPreview = function () {
                 if (!preview) {
                     return;
                 }
                 var value = cm.getValue();
-                if (typeof marked === 'undefined') {
+                if (typeof MdKatexRenderer.render !== 'function') {
                     preview.textContent = value;
-                } else {
-                    var rendered = marked.parse(value);
-                    preview.innerHTML = normalizeMathHtml(rendered);
+                    return;
                 }
-                applyHighlight(preview);
-                applyMath(preview);
+                var html = MdKatexRenderer.render(value);
+                preview.innerHTML = html;
+                MdKatexRenderer.applyPostProcessing(preview);
             };
+
             renderPreview();
+
+            var requiredMessage = textarea.getAttribute('data-required-message') || '';
             var handleChange = function () {
                 renderPreview();
                 if (!requiredMessage) {
@@ -207,8 +137,9 @@
                     }
                 }
             };
+
             cm.on('change', handleChange);
-            var requiredMessage = textarea.getAttribute('data-required-message');
+
             var form = container.closest('form');
             if (form) {
                 form.addEventListener('submit', function (event) {
@@ -234,6 +165,7 @@
                     cm.save();
                 });
             }
+
             bindToolbar(cm, container.querySelector('.markdown-toolbar'));
         });
     }
@@ -262,8 +194,10 @@
     }
 
     function ready() {
-        configureMarked();
-        enhanceStaticMarkdown();
+        if (typeof MdKatexRenderer !== 'undefined') {
+            MdKatexRenderer.configure();
+            MdKatexRenderer.enhanceStaticMarkdown();
+        }
         initEditors();
         initTagTree();
     }

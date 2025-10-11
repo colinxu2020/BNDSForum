@@ -534,6 +534,71 @@ main {
     border-radius: 0 var(--radius-md) var(--radius-md) 0;
 }
 
+.markdown-body details.callout {
+    border: 1px solid rgba(148, 163, 184, 0.25);
+    border-radius: var(--radius-md);
+    background: rgba(148, 163, 184, 0.08);
+    padding: 0;
+    margin: 1.25rem 0;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+    overflow: hidden;
+}
+
+.markdown-body details.callout summary {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    cursor: pointer;
+    padding: 0.85rem 1rem;
+    font-weight: 600;
+    list-style: none;
+    background: rgba(255, 255, 255, 0.55);
+    color: var(--text-color);
+}
+
+.markdown-body details.callout summary::marker,
+.markdown-body details.callout summary::-webkit-details-marker {
+    display: none;
+}
+
+.markdown-body details.callout summary:focus-visible {
+    outline: 2px solid rgba(79, 70, 229, 0.35);
+    outline-offset: 2px;
+}
+
+.markdown-body .callout-title {
+    flex: 1;
+}
+
+.markdown-body .callout-content {
+    padding: 0.9rem 1.1rem 1.15rem;
+    background: rgba(255, 255, 255, 0.9);
+}
+
+.markdown-body details.callout.callout-info {
+    border-color: rgba(14, 165, 233, 0.35);
+    background: rgba(14, 165, 233, 0.1);
+}
+
+.markdown-body details.callout.callout-success {
+    border-color: rgba(34, 197, 94, 0.3);
+    background: rgba(34, 197, 94, 0.1);
+}
+
+.markdown-body details.callout.callout-warning {
+    border-color: rgba(250, 204, 21, 0.35);
+    background: rgba(250, 204, 21, 0.12);
+}
+
+.markdown-body details.callout.callout-error {
+    border-color: rgba(239, 68, 68, 0.35);
+    background: rgba(239, 68, 68, 0.12);
+}
+
+.markdown-body details.callout[open] summary {
+    border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+}
+
 .markdown-body table {
     width: 100%;
     border-collapse: collapse;

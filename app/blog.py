@@ -1,32 +1,136 @@
+
 from __future__ import annotations
 
-import markdown2
+import re
+from typing import Dict, Tuple
+
 from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from markupsafe import Markup
+from markdown_it import MarkdownIt
+from markdown_it.token import Token
+from mdit_py_plugins.container import container_plugin
+from mdit_py_plugins.tasklists import tasklists_plugin
 
 from .datastore import DataStore
 
 
 bp = Blueprint("blog", __name__)
 
-_MARKDOWN_EXTRAS = [
-    "fenced-code-blocks",
-    "tables",
-    "strike",
-    "task_list",
-    "cuddled-lists",
-    "metadata",
-]
-_markdowner = markdown2.Markdown(extras=_MARKDOWN_EXTRAS, safe_mode="escape")
+_MATH_SEGMENT_RE = re.compile(
+    r"(\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)|\$\$[\s\S]*?\$\$|\$(?!\$)[^$]*?\$)"
+)
+_KATEX_BRACE_PLACEHOLDERS = {
+    r"\{": "KATEXLEFTBRACEPLACEHOLDER",
+    r"\}": "KATEXRIGHTBRACEPLACEHOLDER",
+}
+
+_CALLOUT_KINDS = {"info", "success", "warning", "error"}
+_CALLOUT_DEFAULT_TITLES = {
+    "info": "Info",
+    "success": "Success",
+    "warning": "Warning",
+    "error": "Error",
+}
+_CALLOUT_INFO_RE = re.compile(r"^([\w-]+)(?:\[([^\]]*)\])?(?:\{([^}]*)\})?")
+
+
+def _parse_callout_info(params: str) -> Tuple[str, str | None, Dict[str, str]] | None:
+    stripped = params.strip()
+    match = _CALLOUT_INFO_RE.match(stripped)
+    if not match:
+        return None
+    kind, label, attr_string = match.groups()
+    if kind not in _CALLOUT_KINDS:
+        return None
+    attributes: Dict[str, str] = {}
+    if attr_string:
+        for raw in re.split(r"\s+", attr_string.strip()):
+            if not raw:
+                continue
+            if "=" in raw:
+                key, value = raw.split("=", 1)
+                value = value.strip('"\'')
+            else:
+                key, value = raw, "true"
+            attributes[key] = value
+    return kind, label, attributes
+
+
+def _truthy(value: str | None) -> bool:
+    if value is None:
+        return False
+    return value.strip().lower() not in {"", "0", "false", "none", "no", "off"}
+
+
+def _render_inline(md: MarkdownIt, text: str) -> str:
+    if not text:
+        return ""
+    protected = _protect_katex_braces(text)
+    rendered = md.renderInline(protected)
+    return _restore_katex_braces(rendered)
+
+
+def _register_callout_plugin(md: MarkdownIt) -> None:
+    def validate(params: str, markup: str) -> bool:
+        return _parse_callout_info(params) is not None
+
+    def render(self, tokens: list[Token], idx: int, options, env) -> str:
+        token = tokens[idx]
+        parsed = _parse_callout_info(token.info or "") or ("info", None, {})
+        kind, label, attrs = parsed
+        label_text = label or _CALLOUT_DEFAULT_TITLES[kind]
+        summary_html = _render_inline(md, label_text)
+        class_attr = f' class="callout callout-{kind}"'
+        open_attr = " open" if _truthy(attrs.get("open")) else ""
+        if token.nesting == 1:
+            return (
+                f"<details{class_attr}{open_attr}>"
+                f"<summary><span class=\"callout-title\">{summary_html}</span></summary>"
+                "<div class=\"callout-content\">"
+            )
+        return "</div></details>"
+
+    for kind in _CALLOUT_KINDS:
+        container_plugin(md, kind, validate=validate, render=render)
+
+
+def _create_markdown_renderer() -> MarkdownIt:
+    md = MarkdownIt("commonmark", {"html": False, "linkify": True})
+    md.enable("strikethrough")
+    md.enable("table")
+    md.use(tasklists_plugin)
+    _register_callout_plugin(md)
+    return md
+
+
+_markdowner = _create_markdown_renderer()
+
+
+def _protect_katex_braces(source: str) -> str:
+    def _replace(match: re.Match[str]) -> str:
+        segment = match.group(0)
+        for token, placeholder in _KATEX_BRACE_PLACEHOLDERS.items():
+            segment = segment.replace(token, placeholder)
+        return segment
+
+    return _MATH_SEGMENT_RE.sub(_replace, source)
+
+
+def _restore_katex_braces(rendered: str) -> str:
+    for token, placeholder in _KATEX_BRACE_PLACEHOLDERS.items():
+        rendered = rendered.replace("\\" + placeholder, placeholder)
+        rendered = rendered.replace(placeholder, token)
+    return rendered
 
 
 @bp.app_template_filter("markdown")
 def render_markdown(value: str | None) -> Markup:
     if not value:
         return Markup("")
-    _markdowner.reset()
-    html = _markdowner.convert(value)
+    protected = _protect_katex_braces(value)
+    html = _markdowner.render(protected)
+    html = _restore_katex_braces(html)
     return Markup(html)
 
 
