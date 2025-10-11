@@ -51,6 +51,7 @@ class User(UserMixin):
     password_hash: str
     role: str = "user"
     constant_tags: List[str] = field(default_factory=list)
+    real_name: str = ""
 
     def get_id(self) -> str:
         return self.username
@@ -65,6 +66,7 @@ class User(UserMixin):
             "password_hash": self.password_hash,
             "role": self.role,
             "constant_tags": self.constant_tags,
+            "real_name": self.real_name,
         }
 
 
@@ -97,7 +99,11 @@ class DataStore:
             self.users_doc.write([admin.to_record()])
 
     def list_users(self) -> List[Dict[str, Any]]:
-        return self.users_doc.read()
+        users = self.users_doc.read()
+        for item in users:
+            item.setdefault("constant_tags", [])
+            item.setdefault("real_name", "")
+        return users
 
     def load_user(self, username: str) -> Optional[User]:
         record = self.get_user(username)
@@ -108,12 +114,14 @@ class DataStore:
             password_hash=record["password_hash"],
             role=record.get("role", "user"),
             constant_tags=record.get("constant_tags", []),
+            real_name=record.get("real_name", ""),
         )
 
     def get_user(self, username: str) -> Optional[Dict[str, Any]]:
         for record in self.users_doc.read():
             if record["username"] == username:
                 record.setdefault("constant_tags", [])
+                record.setdefault("real_name", "")
                 return record
         return None
 
@@ -123,6 +131,7 @@ class DataStore:
         password: str,
         role: str = "user",
         constant_tags: Optional[Iterable[str]] = None,
+        real_name: str = "",
     ) -> User:
         if self.get_user(username):
             raise ValueError("用户已存在")
@@ -131,6 +140,7 @@ class DataStore:
             password_hash=generate_password_hash(password),
             role=role,
             constant_tags=list(constant_tags or []),
+            real_name=real_name.strip(),
         )
         users = self.users_doc.read()
         users.append(record.to_record())
@@ -165,8 +175,18 @@ class DataStore:
                 password_hash=record["password_hash"],
                 role=record.get("role", "user"),
                 constant_tags=record.get("constant_tags", []),
+                real_name=record.get("real_name", ""),
             )
         return None
+
+    def update_user_real_name(self, username: str, real_name: str) -> None:
+        users = self.users_doc.read()
+        for item in users:
+            if item["username"] == username:
+                item["real_name"] = real_name.strip()
+                self.users_doc.write(users)
+                return
+        raise ValueError("未找到用户")
 
     # Posts -----------------------------------------------------------
     def list_posts(self) -> List[Dict[str, Any]]:
@@ -322,4 +342,3 @@ class DataStore:
             if post.get("author") == username and required.issubset(set(post.get("tags", []))):
                 return True
         return False
-

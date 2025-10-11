@@ -1,5 +1,14 @@
 /* global CodeMirror, marked, hljs, renderMathInElement */
 (function () {
+    function normalizeMathHtml(html) {
+        if (!html || html.indexOf('<br') === -1) {
+            return html;
+        }
+        return html.replace(/(\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\])/g, function (segment) {
+            return segment.replace(/<br\s*\/?>/gi, '\n');
+        });
+    }
+
     function configureMarked() {
         if (typeof marked === 'undefined') {
             return;
@@ -64,6 +73,7 @@
                 return;
             }
             section.setAttribute('data-md-enhanced', 'true');
+            section.innerHTML = normalizeMathHtml(section.innerHTML);
             applyHighlight(section);
             applyMath(section);
         });
@@ -177,16 +187,50 @@
                 if (typeof marked === 'undefined') {
                     preview.textContent = value;
                 } else {
-                    preview.innerHTML = marked.parse(value);
+                    var rendered = marked.parse(value);
+                    preview.innerHTML = normalizeMathHtml(rendered);
                 }
                 applyHighlight(preview);
                 applyMath(preview);
             };
             renderPreview();
-            cm.on('change', renderPreview);
+            var handleChange = function () {
+                renderPreview();
+                if (!requiredMessage) {
+                    return;
+                }
+                if (container.classList.contains('has-error') && cm.getValue().trim().length > 0) {
+                    container.classList.remove('has-error');
+                    var hintNode = container.querySelector('.markdown-error');
+                    if (hintNode) {
+                        hintNode.remove();
+                    }
+                }
+            };
+            cm.on('change', handleChange);
+            var requiredMessage = textarea.getAttribute('data-required-message');
             var form = container.closest('form');
             if (form) {
-                form.addEventListener('submit', function () {
+                form.addEventListener('submit', function (event) {
+                    var value = cm.getValue().trim();
+                    if (requiredMessage && value.length === 0) {
+                        event.preventDefault();
+                        container.classList.add('has-error');
+                        var hint = container.querySelector('.markdown-error');
+                        if (!hint) {
+                            hint = document.createElement('p');
+                            hint.className = 'markdown-error';
+                            container.appendChild(hint);
+                        }
+                        hint.textContent = requiredMessage;
+                        cm.focus();
+                        return;
+                    }
+                    container.classList.remove('has-error');
+                    var existing = container.querySelector('.markdown-error');
+                    if (existing) {
+                        existing.remove();
+                    }
                     cm.save();
                 });
             }

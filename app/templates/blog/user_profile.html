@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% set display_name = profile.get('real_name') or profile['username'] %}
+{% block title %}{{ display_name }} 的主页 - BNDS Blog{% endblock %}
+{% block content %}
+<section class="card">
+    <header class="form-header">
+        <h1>{{ display_name }}</h1>
+        <p class="form-tip">
+            用户名：{{ profile['username'] }} · 角色：{{ '管理员' if profile.get('role') == 'admin' else '普通用户' }}
+        </p>
+    </header>
+
+    <div class="profile-meta">
+        <div>
+            <h2>真实姓名</h2>
+            <p class="muted-text">公开展示，可由本人或管理员修改。</p>
+            {% if can_edit_real_name %}
+                <form method="post" class="form-inline">
+                    <label class="sr-only" for="real_name">真实姓名</label>
+                    <input type="text" id="real_name" name="real_name" value="{{ profile.get('real_name', '') }}" required>
+                    <button type="submit" class="button primary">保存</button>
+                </form>
+            {% else %}
+                <p>{{ display_name }}</p>
+            {% endif %}
+        </div>
+        <div>
+            <h2>固定标签</h2>
+            <p class="muted-text">系统会自动为该用户的文章附加这些标签。</p>
+            <div class="tag-collection">
+                {% for tag in profile.get('constant_tags', []) %}
+                    <span class="tag-badge">{{ tag }}</span>
+                {% else %}
+                    <span class="tag-badge muted">暂无固定标签</span>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</section>
+
+<section class="card">
+    <h2>全部文章</h2>
+    {% if posts %}
+        <div class="post-list">
+            {% for post in posts %}
+                <article class="post-card card">
+                    <header>
+                        <h3><a href="{{ url_for('blog.detail', post_id=post['id']) }}">{{ post['title'] }}</a></h3>
+                        <div class="post-meta">
+                            <span>发布：{{ post['created_at'] }}</span>
+                            <span>更新：{{ post['updated_at'] }}</span>
+                        </div>
+                    </header>
+                    {% if post['tags'] %}
+                        <div class="post-tags">
+                            {% for tag in post['tags'] %}
+                                <span class="tag-badge">{{ tag }}</span>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                    <div class="post-excerpt markdown-body clamp-3">
+                        {{ post['content'] | markdown }}
+                    </div>
+                    <a class="link-more" href="{{ url_for('blog.detail', post_id=post['id']) }}">阅读全文</a>
+                </article>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p class="empty-state">该用户还没有发布文章。</p>
+    {% endif %}
+</section>
+{% endblock %}

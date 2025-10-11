@@ -5,7 +5,16 @@
     <header class="post-header">
         <h1>{{ post['title'] }}</h1>
         <div class="post-meta">
-            <span>作者：{{ post['author'] }}</span>
+            <span>
+                作者：
+                <a href="{{ url_for('blog.user_profile', username=post['author_username']) }}">
+                    {% if post['author_real_name'] %}
+                        {{ post['author_real_name'] }}（{{ post['author_username'] }}）
+                    {% else %}
+                        {{ post['author_username'] }}
+                    {% endif %}
+                </a>
+            </span>
             <span>发布：{{ post['created_at'] }}</span>
             <span>更新：{{ post['updated_at'] }}</span>
         </div>
@@ -39,7 +48,15 @@
             {% for comment in comments %}
                 <article class="comment-item">
                     <div class="comment-meta">
-                        <strong>{{ comment['author'] }}</strong>
+                        <strong>
+                            <a href="{{ url_for('blog.user_profile', username=comment['author']) }}">
+                                {% if comment['author_real_name'] %}
+                                    {{ comment['author_real_name'] }}（{{ comment['author'] }}）
+                                {% else %}
+                                    {{ comment['author'] }}
+                                {% endif %}
+                            </a>
+                        </strong>
                         <span>{{ comment['created_at'] }}</span>
                     </div>
                     <div class="comment-body markdown-body">
@@ -71,7 +88,7 @@
                                       name="content"
                                       rows="5"
                                       placeholder="支持 Markdown 语法，比如 **加粗** 和 ```代码```"
-                                      required
+                                      data-required-message="评论内容不能为空"
                                       data-markdown-source></textarea>
                         </div>
                         <div class="markdown-panel markdown-panel-preview">

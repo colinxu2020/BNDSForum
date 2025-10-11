@@ -50,23 +50,25 @@ def register():
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
-        #role = request.form.get("role", "user")
+        real_name = request.form.get("real_name", "").strip()
         role = "user"
-        #constant_tags = [tag.strip() for tag in request.form.get("constant_tags", "").split(",") if tag.strip()]
         constant_tags = []
 
-        if not username or not password:
-            flash("用户名和密码不能为空", "error")
+        if not username or not password or not real_name:
+            flash("用户名、真实姓名和密码不能为空", "error")
         else:
             try:
-                datastore.create_user(username=username, password=password, role=role, constant_tags=constant_tags)
+                datastore.create_user(
+                    username=username,
+                    password=password,
+                    role=role,
+                    constant_tags=constant_tags,
+                    real_name=real_name,
+                )
             except ValueError as exc:
                 flash(str(exc), "error")
             else:
-                flash("用户创建成功", "success")
-                return redirect(url_for("admin.user_list"))
+                flash("注册成功，请登录", "success")
+                return redirect(url_for("auth.login"))
 
-    return render_template(
-        "auth/register.html",
-        roles=[("user", "普通用户")],
-    )
+    return render_template("auth/register.html")

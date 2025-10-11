@@ -4,49 +4,125 @@
 <section class="card">
     <header class="form-header">
         <h1>用户管理</h1>
-        <p class="form-tip">调整用户角色与固定标签，帮助系统自动归类文章。</p>
+        <p class="form-tip">
+            常用标签（左侧标签树与写作页面可选）用于按需打标；
+            固定标签由管理员分配，系统会自动为该用户的文章附加这些标签。
+        </p>
     </header>
+    <div class="action-group">
+        <a class="button primary" href="{{ url_for('auth.register') }}">手动创建新用户</a>
+    </div>
+</section>
 
-    <a class="button primary" href="{{ url_for('auth.register') }}">手动创建新用户</a>
+<section class="card">
+    <h2>筛选用户</h2>
+    <form class="form-grid" method="get">
+        <div class="form-field">
+            <label for="filter-username">用户名</label>
+            <input type="text"
+                   id="filter-username"
+                   name="username"
+                   value="{{ filters.username }}"
+                   placeholder="精确或模糊匹配用户名">
+        </div>
+        <div class="form-field">
+            <label for="filter-real-name">真实姓名</label>
+            <input type="text"
+                   id="filter-real-name"
+                   name="real_name"
+                   value="{{ filters.real_name }}"
+                   placeholder="支持模糊匹配，例如：王">
+        </div>
+        <div class="form-field">
+            <label for="filter-constant">固定标签</label>
+            <input type="text"
+                   id="filter-constant"
+                   name="constant_tag"
+                   value="{{ filters.constant_tag }}"
+                   placeholder="用逗号分隔多个标签，例如：学生会, 摄影">
+            <p class="field-hint">需全部命中方才显示（忽略大小写）。</p>
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="button primary">应用筛选</button>
+            <a class="button ghost" href="{{ url_for('admin.user_list') }}">重置</a>
+        </div>
+    </form>
+    {% if normal_tags %}
+        <div class="tag-collection" aria-label="常用标签库">
+            {% for tag in normal_tags %}
+                <span class="tag-chip">{{ tag }}</span>
+            {% endfor %}
+        </div>
+    {% endif %}
+    <p class="muted-text">符合条件：{{ matched_count }} / {{ total_users }} 人</p>
+</section>
 
+<section class="card">
+    <h2>批量修改</h2>
     <div class="responsive-table">
         <table>
             <thead>
             <tr>
+                <th>真实姓名</th>
                 <th>用户名</th>
                 <th>角色</th>
-                <th>固定标签</th>
+                <th>固定标签（逗号分隔）</th>
                 <th>操作</th>
             </tr>
             </thead>
             <tbody>
-            {% for user in users %}
-                {% set form_id = 'user-form-' ~ loop.index %}
-                <tr>
-                    <td>{{ user['username'] }}</td>
-                    <td>
-                        <div class="table-control select-control">
-                            <div class="select-shell">
-                                <select name="role" form="{{ form_id }}" class="table-select">
-                                    <option value="user" {% if user['role'] == 'user' %}selected{% endif %}>普通用户</option>
-                                    <option value="admin" {% if user['role'] == 'admin' %}selected{% endif %}>管理员</option>
-                                </select>
+            {% if users %}
+                {% for user in users %}
+                    {% set form_id = 'user-form-' ~ loop.index %}
+                    <tr>
+                        <td>
+                            <div class="table-control">
+                                <input type="text"
+                                       name="real_name"
+                                       form="{{ form_id }}"
+                                       value="{{ user.get('real_name', '') }}"
+                                       class="table-input"
+                                       placeholder="例如：王同学"
+                                       required>
                             </div>
-                        </div>
-                    </td>
-                    <td>
-                        <div class="table-control">
-                            <input type="text" name="constant_tags" form="{{ form_id }}" value="{{ user['constant_tags'] | join(', ') }}" placeholder="例如：电影, 校园生活" class="table-input">
-                        </div>
-                    </td>
-                    <td>
-                        <form id="{{ form_id }}" method="post" action="{{ url_for('admin.update_user') }}">
-                            <input type="hidden" name="username" value="{{ user['username'] }}">
-                            <button type="submit" class="button primary">保存</button>
-                        </form>
-                    </td>
+                        </td>
+                        <td>
+                            <a href="{{ url_for('blog.user_profile', username=user['username']) }}">{{ user['username'] }}</a>
+                        </td>
+                        <td>
+                            <div class="table-control select-control">
+                                <div class="select-shell">
+                                    <select name="role" form="{{ form_id }}" class="table-select">
+                                        <option value="user" {% if user['role'] == 'user' %}selected{% endif %}>普通用户</option>
+                                        <option value="admin" {% if user['role'] == 'admin' %}selected{% endif %}>管理员</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            <div class="table-control">
+                                <input type="text"
+                                       name="constant_tags"
+                                       form="{{ form_id }}"
+                                       value="{{ user['constant_tags'] | join(', ') }}"
+                                       placeholder="例如：学生会, 摄影"
+                                       class="table-input">
+                            </div>
+                        </td>
+                        <td>
+                            <form id="{{ form_id }}" method="post" action="{{ url_for('admin.update_user') }}">
+                                <input type="hidden" name="username" value="{{ user['username'] }}">
+                                <input type="hidden" name="return_to" value="{{ request.full_path.rstrip('?') }}">
+                                <button type="submit" class="button primary">保存</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% endfor %}
+            {% else %}
+                <tr>
+                    <td colspan="5">暂无符合条件的用户，请调整筛选条件。</td>
                 </tr>
-            {% endfor %}
+            {% endif %}
             </tbody>
         </table>
     </div>

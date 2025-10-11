@@ -31,7 +31,16 @@
                 <header>
                     <h2><a href="{{ url_for('blog.detail', post_id=post['id']) }}">{{ post['title'] }}</a></h2>
                     <div class="post-meta">
-                        <span>作者：{{ post['author'] }}</span>
+                        <span>
+                            作者：
+                            <a href="{{ url_for('blog.user_profile', username=post['author_username']) }}">
+                                {% if post['author_real_name'] %}
+                                    {{ post['author_real_name'] }}（{{ post['author_username'] }}）
+                                {% else %}
+                                    {{ post['author_username'] }}
+                                {% endif %}
+                            </a>
+                        </span>
                         <span>发布：{{ post['created_at'] }}</span>
                         <span>更新：{{ post['updated_at'] }}</span>
                     </div>
@@ -48,7 +57,7 @@
                 </div>
                 <div class="post-footer">
                     <a class="link-more" href="{{ url_for('blog.detail', post_id=post['id']) }}">阅读全文</a>
-                    {% if current_user.is_authenticated and (current_user.is_admin or post['author'] == current_user.username) %}
+                    {% if current_user.is_authenticated and (current_user.is_admin or post['author_username'] == current_user.username) %}
                         <div class="post-shortcuts">
                             <a href="{{ url_for('blog.edit', post_id=post['id']) }}">编辑</a>
                         </div>

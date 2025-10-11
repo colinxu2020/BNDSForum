@@ -12,21 +12,13 @@
             <input type="text" id="username" name="username" autocomplete="username" required>
         </div>
         <div class="form-field">
+            <label for="real_name">真实姓名</label>
+            <input type="text" id="real_name" name="real_name" autocomplete="name" required>
+        </div>
+        <div class="form-field">
             <label for="password">密码</label>
             <input type="password" id="password" name="password" autocomplete="new-password" required>
         </div>
-        <div class="form-field">
-            <label for="role">角色</label>
-            <select id="role" name="role">
-                {% for value, label in roles %}
-                    <option value="{{ value }}">{{ label }}</option>
-                {% endfor %}
-            </select>
-        </div>
-        <!-- <div class="form-field">
-            <label for="constant_tags">固定标签（用逗号分隔）</label>
-            <input type="text" id="constant_tags" name="constant_tags" placeholder="例如：社团, 科技">
-        </div> !-->
         <div class="form-actions">
             <button type="submit" class="button primary">保存</button>
             <a class="button ghost" href="{{ url_for('auth.login') }}">返回登录</a>
