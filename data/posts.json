@@ -1,1 +1,14 @@
-[]
+[
+  {
+    "id": "9bc53dcd39c648c9930f074415a12e8b",
+    "author": "admin",
+    "title": "123",
+    "content": "$x_i \\in {0,1}$\r\n\r\n$\\left( \\forall(u,v) \\in E \\right)(\\forall w \\in V)\\left{ (u,w),(v,w) \\right} \\cap E \\neq \\varnothing$\r\n\r\n:::align{right}\r\n\r\n![](https://cdn.luogu.com.cn/upload/usericon/1.png)\r\n 123\r\n#### 标题 4\r\n:::\r\n\r\n:::epigraph[——otto]\r\n大家好啊，我是说的道理，今天来点大家想看的东西。\r\n:::\r\n\r\n::::info[我是标题]\r\n大家好啊，我是说的道理，今天来点大家想看的东西。\r\n::::\r\n\r\n::::info[我是默认展开的折叠框]{open}\r\n使用 `{open}` 使折叠框默认展开。\r\n::::\r\n\r\n::::success[$$\\displaystyle\\sum_{i = 1}^n \\sum_{j = 1}^n \\gcd(i, j)$$]\r\n数学公式也是可以出现在标题上的。\r\n::::\r\n\r\n::::warning[警告]\r\n这是一个警告框。\r\n::::\r\n\r\n::::error[错误]\r\n这是一个错误框。\r\n::::\r\n\r\n::::::warning[我是警告]\r\n\r\n:::::warning[不要]\r\n\r\n::::warning[滥用]\r\n\r\n:::warning[嵌套]\r\n不然会被 chen_zhe 封号！！！！！\r\n:::\r\n::::\r\n:::::\r\n::::::",
+    "tags": [
+      "OIFC"
+    ],
+    "created_at": "2025-10-11T13:03:53.331534Z",
+    "updated_at": "2025-10-11T14:00:07.244042Z",
+    "comments": []
+  }
+]
