@@ -23,7 +23,16 @@
                 <header>
                     <h3><a href="{{ url_for('blog.detail', post_id=post['id']) }}">{{ post['title'] }}</a></h3>
                     <div class="post-meta">
-                        <span>作者：{{ post['author'] }}</span>
+                        <span>
+                            作者：
+                            <a href="{{ url_for('blog.user_profile', username=post['author_username']) }}">
+                                {% if post['author_real_name'] %}
+                                    {{ post['author_real_name'] }}（{{ post['author_username'] }}）
+                                {% else %}
+                                    {{ post['author_username'] }}
+                                {% endif %}
+                            </a>
+                        </span>
                         <span>发布：{{ post['created_at'] }}</span>
                     </div>
                 </header>
@@ -52,7 +61,7 @@
             <table>
                 <thead>
                 <tr>
-                    <th>用户名</th>
+                    <th>真实姓名 / 用户名</th>
                     <th>固定标签</th>
                     <th>是否已发布文章</th>
                 </tr>
@@ -60,7 +69,15 @@
                 <tbody>
                 {% for item in stats["eligible_users"] %}
                     <tr>
-                        <td>{{ item["username"] }}</td>
+                        <td>
+                            <a href="{{ url_for('blog.user_profile', username=item['username']) }}">
+                                {% if item["real_name"] %}
+                                    {{ item["real_name"] }}（{{ item["username"] }}）
+                                {% else %}
+                                    {{ item["username"] }}
+                                {% endif %}
+                            </a>
+                        </td>
                         <td>
                             {% if item["constant_tags"] %}
                                 {{ item["constant_tags"] | join(', ') }}

@@ -7,7 +7,7 @@
         <div class="tag-node-card">
             <div class="tag-node-header">
                 {% if node['children'] %}
-                    <button class="tag-toggle" type="button" aria-expanded="true" aria-controls="{{ child_id }}" data-toggle="#{{ child_id }}" title="折叠/展开">
+                    <button class="tag-toggle" type="button" aria-expanded="false" aria-controls="{{ child_id }}" data-toggle="#{{ child_id }}" title="折叠/展开">
                         <span class="tag-toggle-icon"></span>
                     </button>
                 {% endif %}
@@ -25,7 +25,7 @@
             <a class="link-more" href="{{ url_for('tag.node_detail', node_id=node['id']) }}">查看详情</a>
         </div>
         {% if node['children'] %}
-            <ul class="tag-tree-children" id="{{ child_id }}">
+            <ul class="tag-tree-children is-collapsed" id="{{ child_id }}">
                 {% for child in node['children'] %}
                     {{ render_node(child) }}
                 {% endfor %}

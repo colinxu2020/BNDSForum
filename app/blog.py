@@ -34,10 +34,34 @@ def get_datastore() -> DataStore:
     return current_app.extensions["datastore"]
 
 
+def _user_lookup(datastore: DataStore) -> dict[str, dict[str, object]]:
+    users = datastore.list_users()
+    return {user["username"]: user for user in users}
+
+
+def _decorate_post(post: dict, user_map: dict[str, dict[str, object]]) -> dict:
+    record = user_map.get(post.get("author"), {})
+    decorated = {**post}
+    decorated["author_username"] = post.get("author")
+    decorated["author_real_name"] = record.get("real_name", "") if record else ""
+    decorated["author_display"] = decorated["author_real_name"] or decorated["author_username"]
+    decorated["author_constant_tags"] = record.get("constant_tags", []) if record else []
+    return decorated
+
+
+def _decorate_comment(comment: dict, user_map: dict[str, dict[str, object]]) -> dict:
+    record = user_map.get(comment.get("author"), {})
+    decorated = {**comment}
+    decorated["author_real_name"] = record.get("real_name", "") if record else ""
+    decorated["author_display"] = decorated["author_real_name"] or decorated.get("author")
+    return decorated
+
+
 @bp.route("/")
 def index():
     datastore = get_datastore()
-    posts = datastore.list_posts()
+    user_map = _user_lookup(datastore)
+    posts = [_decorate_post(post, user_map) for post in datastore.list_posts()]
     normal_tags = datastore.list_normal_tags()
     return render_template(
         "blog/index.html",
@@ -110,10 +134,12 @@ def detail(post_id: str):
             datastore.add_comment(post_id, current_user.username, content)
             flash("评论已发布", "success")
             return redirect(url_for("blog.detail", post_id=post_id))
-    comments = post.get("comments", [])
+    user_map = _user_lookup(datastore)
+    decorated_post = _decorate_post(post, user_map)
+    comments = [_decorate_comment(comment, user_map) for comment in post.get("comments", [])]
     return render_template(
         "blog/detail.html",
-        post=post,
+        post=decorated_post,
         comments=comments,
         can_edit=_can_edit(post),
     )
@@ -179,3 +205,37 @@ def delete(post_id: str):
     datastore.delete_post(post_id)
     flash("文章已删除", "success")
     return redirect(url_for("blog.index"))
+
+
+@bp.route("/user/<username>", methods=["GET", "POST"])
+def user_profile(username: str):
+    datastore = get_datastore()
+    user_record = datastore.get_user(username)
+    if not user_record:
+        abort(404)
+
+    can_edit_real_name = current_user.is_authenticated and (
+        current_user.is_admin or current_user.username == username
+    )
+
+    if request.method == "POST":
+        if not can_edit_real_name:
+            abort(403)
+        real_name = request.form.get("real_name", "").strip()
+        if not real_name:
+            flash("真实姓名不能为空", "error")
+        else:
+            datastore.update_user_real_name(username, real_name)
+            flash("真实姓名已更新", "success")
+            return redirect(url_for("blog.user_profile", username=username))
+
+    user_map = _user_lookup(datastore)
+    user_posts = [
+        _decorate_post(post, user_map) for post in datastore.list_posts() if post.get("author") == username
+    ]
+    return render_template(
+        "blog/user_profile.html",
+        profile=user_record,
+        posts=user_posts,
+        can_edit_real_name=can_edit_real_name,
+    )

@@ -60,12 +60,22 @@ def compute_node_stats(datastore: DataStore, tree: Dict):
     paths = build_paths(tree)
     normal_tags = set(datastore.list_normal_tags())
     users = datastore.list_users()
+    user_map = {user["username"]: user for user in users}
     stats = {}
     for node_id, tag_chain in paths.items():
         if not tag_chain:
             posts = datastore.list_posts()
         else:
             posts = datastore.posts_with_tags(tag_chain)
+        decorated_posts = []
+        for post in posts:
+            author = post.get("author")
+            record = user_map.get(author, {})
+            decorated_post = {**post}
+            decorated_post["author_username"] = author
+            decorated_post["author_real_name"] = record.get("real_name", "")
+            decorated_post["author_display"] = decorated_post["author_real_name"] or author
+            decorated_posts.append(decorated_post)
         eligible_users = []
         required = set(tag_chain)
         for user in users:
@@ -75,12 +85,16 @@ def compute_node_stats(datastore: DataStore, tree: Dict):
                 eligible_users.append(
                     {
                         "username": user["username"],
+                        "real_name": user.get("real_name", ""),
                         "has_post": datastore.user_has_post_with_tags(user["username"], tag_chain),
                         "constant_tags": sorted(user_constant),
                     }
                 )
+        eligible_users.sort(
+            key=lambda item: ((item.get("real_name") or item["username"]).lower(), item["username"].lower())
+        )
         stats[node_id] = {
-            "posts": posts,
+            "posts": decorated_posts,
             "eligible_users": eligible_users,
             "path_tags": tag_chain,
         }

@@ -627,6 +627,17 @@ main {
     overflow: hidden;
 }
 
+.markdown-editor.has-error {
+    border-color: rgba(239, 68, 68, 0.4);
+    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.18);
+}
+
+.markdown-error {
+    margin: 0.6rem 0 0;
+    color: var(--danger);
+    font-size: 0.85rem;
+}
+
 .markdown-editor.compact {
     border-radius: var(--radius-sm);
     box-shadow: none;
@@ -1104,6 +1115,66 @@ th {
     transform: rotate(-135deg);
 }
 
+@media (prefers-color-scheme: dark) {
+    .tag-node-card {
+        background: rgba(30, 41, 59, 0.85);
+        border-color: rgba(148, 163, 184, 0.22);
+    }
+
+    .tag-node-card:hover {
+        border-color: rgba(165, 180, 252, 0.45);
+    }
+
+    .tag-tree-children {
+        border-color: rgba(129, 140, 248, 0.28);
+    }
+
+    .tag-toggle {
+        background: rgba(99, 102, 241, 0.22);
+        border-color: rgba(129, 140, 248, 0.45);
+        color: rgba(199, 210, 254, 0.9);
+    }
+
+    .tag-badge {
+        background: rgba(129, 140, 248, 0.28);
+        color: rgba(226, 232, 240, 0.95);
+    }
+
+    .tag-chip {
+        background: rgba(129, 140, 248, 0.28);
+        color: rgba(226, 232, 240, 0.95);
+    }
+
+    .responsive-table {
+        border-color: rgba(148, 163, 184, 0.32);
+    }
+
+    th {
+        background: rgba(129, 140, 248, 0.18);
+        color: rgba(226, 232, 240, 0.92);
+    }
+
+    th,
+    td {
+        border-bottom-color: rgba(148, 163, 184, 0.22);
+    }
+
+    .tag-manage-list li {
+        background: rgba(30, 41, 59, 0.7);
+        border-color: rgba(148, 163, 184, 0.22);
+    }
+
+    .inline-form input[type="text"] {
+        background: rgba(15, 23, 42, 0.85);
+        border-color: rgba(129, 140, 248, 0.35);
+        color: var(--text-color);
+    }
+
+    .link-more {
+        color: rgba(196, 181, 253, 0.95);
+    }
+}
+
 .admin-hero h1 {
     margin: 0 0 0.75rem;
 }
@@ -1122,6 +1193,26 @@ th {
 
 .comment-form form button {
     align-self: flex-start;
+}
+
+.profile-meta {
+    display: grid;
+    gap: 1.5rem;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    margin-top: 1.2rem;
+}
+
+.profile-meta h2 {
+    margin: 0 0 0.5rem;
+}
+
+.profile-meta p {
+    margin: 0 0 0.75rem;
+}
+
+.profile-meta .muted-text {
+    margin-bottom: 0.5rem;
+    display: block;
 }
 
 @media (max-width: 768px) {

@@ -112,8 +112,43 @@ def user_list():
     if not current_user.is_admin:
         return redirect(url_for("blog.index"))
     datastore = get_datastore()
-    users = datastore.list_users()
-    return render_template("admin/users.html", users=users)
+    all_users = datastore.list_users()
+    username_query = request.args.get("username", "").strip().lower()
+    real_name_query = request.args.get("real_name", "").strip().lower()
+    constant_query_raw = request.args.get("constant_tag", "").strip()
+    constant_terms = [item.lower() for item in constant_query_raw.split(",") if item.strip()]
+
+    filtered_users = []
+    for user in all_users:
+        username = user.get("username", "")
+        real_name = user.get("real_name", "")
+        constant_tags = user.get("constant_tags", [])
+        if username_query and username_query not in username.lower():
+            continue
+        if real_name_query and real_name_query not in real_name.lower():
+            continue
+        if constant_terms:
+            normalized = [tag.lower() for tag in constant_tags]
+            if not all(term in normalized for term in constant_terms):
+                continue
+        filtered_users.append(user)
+
+    filtered_users.sort(
+        key=lambda item: ((item.get("real_name") or item["username"]).lower(), item["username"].lower())
+    )
+
+    return render_template(
+        "admin/users.html",
+        users=filtered_users,
+        total_users=len(all_users),
+        matched_count=len(filtered_users),
+        filters={
+            "username": request.args.get("username", "").strip(),
+            "real_name": request.args.get("real_name", "").strip(),
+            "constant_tag": constant_query_raw,
+        },
+        normal_tags=datastore.list_normal_tags(),
+    )
 
 
 @bp.route("/tags/add", methods=["POST"])
@@ -214,9 +249,22 @@ def update_user():
         return redirect(url_for("blog.index"))
     username = request.form.get("username", "").strip()
     role = request.form.get("role", "user")
-    constant_tags = [tag.strip() for tag in request.form.get("constant_tags", "").split(",") if tag.strip()]
+    real_name = request.form.get("real_name", "").strip()
+    constant_raw = [tag.strip() for tag in request.form.get("constant_tags", "").split(",") if tag.strip()]
+    constant_tags: list[str] = []
+    seen_tags: set[str] = set()
+    for tag in constant_raw:
+        lowered = tag.lower()
+        if lowered in seen_tags:
+            continue
+        seen_tags.add(lowered)
+        constant_tags.append(tag)
+    return_to = (request.form.get("return_to") or "").strip()
     if not username:
         flash("未指定用户", "error")
+        return redirect(url_for("admin.user_list"))
+    if not real_name:
+        flash("真实姓名不能为空", "error")
         return redirect(url_for("admin.user_list"))
     datastore = get_datastore()
     users = datastore.list_users()
@@ -231,7 +279,12 @@ def update_user():
         if admin_count <= 1:
             flash("至少保留一位管理员", "error")
             return redirect(url_for("admin.user_list"))
+    datastore.update_user_real_name(username, real_name)
     datastore.update_user_constant_tags(username, constant_tags)
     datastore.set_user_role(username, role)
     flash("用户信息已更新", "success")
-    return redirect(url_for("admin.user_list"))
+    fallback = url_for("admin.user_list")
+    redirect_target = fallback
+    if return_to and return_to.startswith(fallback):
+        redirect_target = return_to
+    return redirect(redirect_target)
