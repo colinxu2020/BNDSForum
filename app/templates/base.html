@@ -5,10 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{% block title %}BNDS Blog{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/addon/scroll/simplescrollbars.min.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/dark.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/katex/katex.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/codemirror/codemirror.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/codemirror/addon/scroll/simplescrollbars.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/highlightjs/styles/dark.min.css') }}">
 </head>
 <body>
 <div class="page">
@@ -55,16 +55,16 @@
         </div>
     </footer>
 </div>
-<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" defer></script>
-<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" defer></script>
-<script src="https://cdn.jsdelivr.net/npm/markdown-it@14.1.0/dist/markdown-it.min.js" defer></script>
-<script src="https://cdn.jsdelivr.net/npm/markdown-it-container@3.0.0/dist/markdown-it-container.min.js" defer></script>
-<script src="https://cdn.jsdelivr.net/npm/markdown-it-task-lists@2.1.1/dist/markdown-it-task-lists.min.js" defer></script>
-<script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js" defer></script>
-<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.js" defer></script>
-<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/markdown/markdown.min.js" defer></script>
-<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/addon/edit/continuelist.min.js" defer></script>
-<script src="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/addon/scroll/simplescrollbars.min.js" defer></script>
+<script src="{{ url_for('static', filename='vendor/katex/katex.min.js') }}" defer></script>
+<script src="{{ url_for('static', filename='vendor/katex/auto-render.min.js') }}" defer></script>
+<script src="{{ url_for('static', filename='vendor/markdown-it/markdown-it.min.js') }}" defer></script>
+<script src="{{ url_for('static', filename='vendor/markdown-it-container/markdown-it-container.min.js') }}" defer></script>
+<script src="{{ url_for('static', filename='vendor/markdown-it-task-lists/markdown-it-task-lists.min.js') }}" defer></script>
+<script src="{{ url_for('static', filename='vendor/highlightjs/highlight.min.js') }}" defer></script>
+<script src="{{ url_for('static', filename='vendor/codemirror/codemirror.min.js') }}" defer></script>
+<script src="{{ url_for('static', filename='vendor/codemirror/mode/markdown/markdown.min.js') }}" defer></script>
+<script src="{{ url_for('static', filename='vendor/codemirror/addon/edit/continuelist.min.js') }}" defer></script>
+<script src="{{ url_for('static', filename='vendor/codemirror/addon/scroll/simplescrollbars.min.js') }}" defer></script>
 <script src="{{ url_for('static', filename='js/renderer.js') }}" defer></script>
 <script src="{{ url_for('static', filename='js/editor.js') }}" defer></script>
 <script>
