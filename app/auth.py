@@ -42,6 +42,8 @@ def logout():
 
 @bp.route("/register", methods=["GET", "POST"])
 def register():
+    flash("注册功能现已关闭，请直接通过BNDSOJ账号登录", "error")
+    return redirect(url_for("auth.login"))
     #if not current_user.is_admin:
     #    flash("只有管理员可以创建用户", "error")
     #    return redirect(url_for("blog.index"))
