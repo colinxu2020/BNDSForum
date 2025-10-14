@@ -318,9 +318,7 @@ def user_profile(username: str):
     if not user_record:
         abort(404)
 
-    can_edit_real_name = current_user.is_authenticated and (
-        current_user.is_admin or current_user.username == username
-    )
+    can_edit_real_name = current_user.is_authenticated and current_user.is_admin
 
     if request.method == "POST":
         if not can_edit_real_name:

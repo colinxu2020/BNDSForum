@@ -5,7 +5,7 @@
 # Byte-compiled / optimized / DLL files
 __pycache__/
 app/__pycache__/
-app/data/
+data/
 *.py[cod]
 *$py.class
 node_modules/

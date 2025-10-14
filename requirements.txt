@@ -2,3 +2,4 @@ Flask==3.0.3
 Flask-Login==0.6.3
 markdown-it-py==3.0.0
 mdit-py-plugins==0.4.1
+requests==2.32.3
