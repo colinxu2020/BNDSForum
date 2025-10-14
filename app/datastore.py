@@ -11,6 +11,14 @@ from typing import Any, Dict, Iterable, List, Optional
 from flask_login import UserMixin
 from werkzeug.security import check_password_hash, generate_password_hash
 
+from .oj_client import (
+    OJAccountNotFound,
+    OJInvalidCredentials,
+    OJServiceUnavailable,
+    OJUserInfo,
+    OnlineJudgeClient,
+)
+
 
 ISO_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
 
@@ -92,6 +100,7 @@ class DataStore:
         self.posts_dir.mkdir(parents=True, exist_ok=True)
         self._migrate_legacy_posts()
         self._bootstrap_admin()
+        self._oj_client = OnlineJudgeClient()
 
     # User management -------------------------------------------------
     def _bootstrap_admin(self) -> None:
@@ -169,18 +178,68 @@ class DataStore:
         raise ValueError("未找到用户")
 
     def verify_user(self, username: str, password: str) -> Optional[User]:
+        fallback_to_local = True
+        if self._oj_client:
+            try:
+                remote_user = self._oj_client.authenticate(username, password)
+            except OJInvalidCredentials:
+                return None
+            except (OJAccountNotFound, OJServiceUnavailable):
+                pass
+            else:
+                fallback_to_local = False
+                return self._upsert_remote_user(remote_user, password)
+        if fallback_to_local:
+            return self._verify_local_credentials(username, password)
+        return None
+
+    def _verify_local_credentials(self, username: str, password: str) -> Optional[User]:
         record = self.get_user(username)
         if not record:
             return None
-        if check_password_hash(record["password_hash"], password):
-            return User(
-                username=record["username"],
-                password_hash=record["password_hash"],
-                role=record.get("role", "user"),
-                constant_tags=record.get("constant_tags", []),
-                real_name=record.get("real_name", ""),
-            )
-        return None
+        if not check_password_hash(record["password_hash"], password):
+            return None
+        return User(
+            username=record["username"],
+            password_hash=record["password_hash"],
+            role=record.get("role", "user"),
+            constant_tags=record.get("constant_tags", []),
+            real_name=record.get("real_name", ""),
+        )
+
+    def _upsert_remote_user(self, remote_user: OJUserInfo, password: str) -> User:
+        users = self.users_doc.read()
+        password_hash = generate_password_hash(password)
+
+        for item in users:
+            if item["username"] == remote_user.username:
+                item["password_hash"] = password_hash
+                item["real_name"] = remote_user.real_name
+                self.users_doc.write(users)
+                return User(
+                    username=item["username"],
+                    password_hash=item["password_hash"],
+                    role=item.get("role", "user"),
+                    constant_tags=item.get("constant_tags", []),
+                    real_name=item.get("real_name", ""),
+                )
+
+        new_record = {
+            "username": remote_user.username,
+            "password_hash": password_hash,
+            "role": "user",
+            "constant_tags": [],
+            "real_name": remote_user.real_name,
+        }
+        users.append(new_record)
+        self.users_doc.write(users)
+        return User(
+            username=new_record["username"],
+            password_hash=new_record["password_hash"],
+            role=new_record["role"],
+            constant_tags=new_record["constant_tags"],
+            real_name=new_record["real_name"],
+        )
 
     def update_user_real_name(self, username: str, real_name: str) -> None:
         users = self.users_doc.read()
