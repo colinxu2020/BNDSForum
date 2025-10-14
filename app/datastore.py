@@ -73,8 +73,9 @@ class User(UserMixin):
 class DataStore:
     def __init__(self, base_path: Path):
         self.base_path = base_path
+        self._posts_lock = RLock()
+        self.posts_dir = self.base_path / "posts"
         self.users_doc = JsonDocument(self.base_path / "users.json", lambda: [])
-        self.posts_doc = JsonDocument(self.base_path / "posts.json", lambda: [])
         self.tags_doc = JsonDocument(self.base_path / "tags.json", lambda: {"normal_tags": []})
         self.tag_tree_doc = JsonDocument(
             self.base_path / "tag_tree.json",
@@ -88,6 +89,8 @@ class DataStore:
                 ]
             },
         )
+        self.posts_dir.mkdir(parents=True, exist_ok=True)
+        self._migrate_legacy_posts()
         self._bootstrap_admin()
 
     # User management -------------------------------------------------
@@ -189,31 +192,78 @@ class DataStore:
         raise ValueError("未找到用户")
 
     # Posts -----------------------------------------------------------
+    def _post_path(self, post_id: str) -> Path:
+        return self.posts_dir / f"{post_id}.json"
+
+    def _load_post(self, post_id: str) -> Optional[Dict[str, Any]]:
+        path = self._post_path(post_id)
+        if not path.exists():
+            return None
+        with path.open("r", encoding="utf-8") as handle:
+            return json.load(handle)
+
+    def _write_post(self, post: Dict[str, Any]) -> None:
+        path = self._post_path(post["id"])
+        with path.open("w", encoding="utf-8") as handle:
+            json.dump(post, handle, ensure_ascii=False, indent=2)
+
+    def _migrate_legacy_posts(self) -> None:
+        legacy_path = self.base_path / "posts.json"
+        if not legacy_path.exists():
+            return
+        try:
+            with legacy_path.open("r", encoding="utf-8") as handle:
+                posts = json.load(handle)
+        except (json.JSONDecodeError, OSError):
+            posts = []
+        with self._posts_lock:
+            for post in posts:
+                if not isinstance(post, dict):
+                    continue
+                post_id = post.get("id")
+                if not post_id:
+                    continue
+                if "comments" not in post or not isinstance(post["comments"], list):
+                    post["comments"] = []
+                if "created_at" not in post:
+                    post["created_at"] = utcnow_str()
+                if "updated_at" not in post:
+                    post["updated_at"] = post["created_at"]
+                path = self._post_path(post_id)
+                if not path.exists():
+                    self._write_post(post)
+        try:
+            legacy_path.unlink()
+        except OSError:
+            pass
+
     def list_posts(self) -> List[Dict[str, Any]]:
-        posts = self.posts_doc.read()
+        with self._posts_lock:
+            posts: List[Dict[str, Any]] = []
+            for path in self.posts_dir.glob("*.json"):
+                if path.is_file():
+                    with path.open("r", encoding="utf-8") as handle:
+                        posts.append(json.load(handle))
         return sorted(posts, key=lambda item: item.get("created_at", ""), reverse=True)
 
     def get_post(self, post_id: str) -> Optional[Dict[str, Any]]:
-        for post in self.posts_doc.read():
-            if post["id"] == post_id:
-                return post
-        return None
+        with self._posts_lock:
+            return self._load_post(post_id)
 
     def create_post(self, author: str, title: str, content: str, tags: Iterable[str]) -> Dict[str, Any]:
-        posts = self.posts_doc.read()
-        post = {
-            "id": uuid.uuid4().hex,
-            "author": author,
-            "title": title,
-            "content": content,
-            "tags": sorted(list(set(tags))),
-            "created_at": utcnow_str(),
-            "updated_at": utcnow_str(),
-            "comments": [],
-        }
-        posts.append(post)
-        self.posts_doc.write(posts)
-        return post
+        with self._posts_lock:
+            post = {
+                "id": uuid.uuid4().hex,
+                "author": author,
+                "title": title,
+                "content": content,
+                "tags": sorted(list(set(tags))),
+                "created_at": utcnow_str(),
+                "updated_at": utcnow_str(),
+                "comments": [],
+            }
+            self._write_post(post)
+            return post
 
     def update_post(
         self,
@@ -223,42 +273,42 @@ class DataStore:
         content: Optional[str] = None,
         tags: Optional[Iterable[str]] = None,
     ) -> Dict[str, Any]:
-        posts = self.posts_doc.read()
-        for post in posts:
-            if post["id"] == post_id:
-                if title is not None:
-                    post["title"] = title
-                if content is not None:
-                    post["content"] = content
-                if tags is not None:
-                    post["tags"] = sorted(list(set(tags)))
-                post["updated_at"] = utcnow_str()
-                self.posts_doc.write(posts)
-                return post
-        raise ValueError("未找到文章")
+        with self._posts_lock:
+            post = self._load_post(post_id)
+            if post is None:
+                raise ValueError("未找到文章")
+            if title is not None:
+                post["title"] = title
+            if content is not None:
+                post["content"] = content
+            if tags is not None:
+                post["tags"] = sorted(list(set(tags)))
+            post["updated_at"] = utcnow_str()
+            self._write_post(post)
+            return post
 
     def delete_post(self, post_id: str) -> None:
-        posts = self.posts_doc.read()
-        filtered = [post for post in posts if post["id"] != post_id]
-        if len(posts) == len(filtered):
-            raise ValueError("未找到文章")
-        self.posts_doc.write(filtered)
+        with self._posts_lock:
+            path = self._post_path(post_id)
+            if not path.exists():
+                raise ValueError("未找到文章")
+            path.unlink()
 
     def add_comment(self, post_id: str, author: str, content: str) -> Dict[str, Any]:
-        posts = self.posts_doc.read()
-        for post in posts:
-            if post["id"] == post_id:
-                comment = {
-                    "id": uuid.uuid4().hex,
-                    "author": author,
-                    "content": content,
-                    "created_at": utcnow_str(),
-                }
-                post.setdefault("comments", []).append(comment)
-                post["updated_at"] = utcnow_str()
-                self.posts_doc.write(posts)
-                return comment
-        raise ValueError("未找到文章")
+        with self._posts_lock:
+            post = self._load_post(post_id)
+            if post is None:
+                raise ValueError("未找到文章")
+            comment = {
+                "id": uuid.uuid4().hex,
+                "author": author,
+                "content": content,
+                "created_at": utcnow_str(),
+            }
+            post.setdefault("comments", []).append(comment)
+            post["updated_at"] = utcnow_str()
+            self._write_post(post)
+            return comment
 
     # Normal tags -----------------------------------------------------
     def list_normal_tags(self) -> List[str]:
