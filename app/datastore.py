@@ -770,6 +770,16 @@ class DataStore:
             "created_at": timestamp,
         }
 
+    def delete_comment(self, post_id: str, comment_id: str) -> None:
+        conn = self._conn()
+        with conn:
+            result = conn.execute(
+                "DELETE FROM comments WHERE id = ? AND post_id = ?",
+                (comment_id, post_id),
+            )
+            if result.rowcount == 0:
+                raise ValueError("未找到评论")
+
     # Normal tags ------------------------------------------------------
 
     def list_normal_tags(self) -> List[str]:
