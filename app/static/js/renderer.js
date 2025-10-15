@@ -260,7 +260,7 @@
         return ensureMarkdownIt() !== null;
     }
 
-    return {
+    var api = {
         configure: configure,
         render: renderMarkdown,
         renderInline: renderInline,
@@ -269,4 +269,20 @@
         protectKatexBraces: protectKatexBraces,
         restoreKatexBraces: restoreKatexBraces
     };
+
+    if (typeof document !== 'undefined') {
+        var onReady = function () {
+            if (!configure()) {
+                return;
+            }
+            enhanceStaticMarkdown();
+        };
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', onReady);
+        } else {
+            onReady();
+        }
+    }
+
+    return api;
 }));

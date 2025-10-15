@@ -1,5 +1,14 @@
 {% extends "base.html" %}
+{% import "_macros/assets.html" as assets with context %}
 {% block title %}标签节点详情 - BNDS Blog{% endblock %}
+{% block extra_head %}
+    {{ super() }}
+    {{ assets.markdown_view_styles() }}
+{% endblock %}
+{% block extra_scripts %}
+    {{ super() }}
+    {{ assets.markdown_view_scripts() }}
+{% endblock %}
 {% block content %}
 <a href="{{ url_for('tag.tree_view') }}" class="button ghost">返回标签树</a>
 

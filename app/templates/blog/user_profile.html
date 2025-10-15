@@ -1,6 +1,15 @@
 {% extends "base.html" %}
+{% import "_macros/assets.html" as assets with context %}
 {% set display_name = profile.get('real_name') or profile['username'] %}
 {% block title %}{{ display_name }} 的主页 - BNDS Blog{% endblock %}
+{% block extra_head %}
+    {{ super() }}
+    {{ assets.markdown_view_styles() }}
+{% endblock %}
+{% block extra_scripts %}
+    {{ super() }}
+    {{ assets.markdown_view_scripts() }}
+{% endblock %}
 {% block content %}
 <section class="card">
     <header class="form-header">

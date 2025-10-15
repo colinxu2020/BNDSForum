@@ -1,0 +1,27 @@
+{% macro markdown_view_styles() -%}
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/katex/katex.min.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/highlightjs/styles/dark.min.css') }}">
+{%- endmacro %}
+
+{% macro markdown_editor_styles() -%}
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/codemirror/codemirror.min.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/codemirror/addon/scroll/simplescrollbars.min.css') }}">
+{%- endmacro %}
+
+{% macro markdown_view_scripts() -%}
+<script src="{{ url_for('static', filename='vendor/katex/katex.min.js') }}" defer></script>
+<script src="{{ url_for('static', filename='vendor/katex/auto-render.min.js') }}" defer></script>
+<script src="{{ url_for('static', filename='vendor/markdown-it/markdown-it.min.js') }}" defer></script>
+<script src="{{ url_for('static', filename='vendor/markdown-it-container/markdown-it-container.min.js') }}" defer></script>
+<script src="{{ url_for('static', filename='vendor/markdown-it-task-lists/markdown-it-task-lists.min.js') }}" defer></script>
+<script src="{{ url_for('static', filename='vendor/highlightjs/highlight.min.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/renderer.js') }}" defer></script>
+{%- endmacro %}
+
+{% macro markdown_editor_scripts() -%}
+<script src="{{ url_for('static', filename='vendor/codemirror/codemirror.min.js') }}" defer></script>
+<script src="{{ url_for('static', filename='vendor/codemirror/mode/markdown/markdown.min.js') }}" defer></script>
+<script src="{{ url_for('static', filename='vendor/codemirror/addon/edit/continuelist.min.js') }}" defer></script>
+<script src="{{ url_for('static', filename='vendor/codemirror/addon/scroll/simplescrollbars.min.js') }}" defer></script>
+<script src="{{ url_for('static', filename='js/editor.js') }}" defer></script>
+{%- endmacro %}

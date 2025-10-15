@@ -1,5 +1,14 @@
 {% extends "base.html" %}
+{% import "_macros/assets.html" as assets with context %}
 {% block title %}文章列表 - BNDS Blog{% endblock %}
+{% block extra_head %}
+    {{ super() }}
+    {{ assets.markdown_view_styles() }}
+{% endblock %}
+{% block extra_scripts %}
+    {{ super() }}
+    {{ assets.markdown_view_scripts() }}
+{% endblock %}
 {% block content %}
 <section class="hero card">
     <div class="hero-content">
