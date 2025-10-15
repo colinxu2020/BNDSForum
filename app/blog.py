@@ -249,6 +249,32 @@ def detail(post_id: str):
     )
 
 
+@bp.route("/post/<post_id>/comments/<comment_id>/delete", methods=["POST"])
+@login_required
+def delete_comment(post_id: str, comment_id: str):
+    datastore = get_datastore()
+    post = datastore.get_post(post_id)
+    if not post:
+        abort(404)
+    comment = None
+    for item in post.get("comments", []):
+        if item.get("id") == comment_id:
+            comment = item
+            break
+    if comment is None:
+        abort(404)
+    if not (current_user.is_admin or comment.get("author") == current_user.username):
+        flash("没有权限删除该评论", "error")
+        return redirect(url_for("blog.detail", post_id=post_id))
+    try:
+        datastore.delete_comment(post_id, comment_id)
+    except ValueError:
+        flash("评论不存在或已删除", "error")
+    else:
+        flash("评论已删除", "success")
+    return redirect(url_for("blog.detail", post_id=post_id))
+
+
 @bp.route("/post/<post_id>/edit", methods=["GET", "POST"])
 @login_required
 def edit(post_id: str):

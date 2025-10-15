@@ -397,6 +397,10 @@ main {
     font-size: 0.85rem;
 }
 
+.comment-delete-form {
+    margin-left: auto;
+}
+
 .comment-body {
     color: var(--text-color);
 }
@@ -430,6 +434,11 @@ main {
     font-weight: 600;
     cursor: pointer;
     transition: transform 0.15s ease, box-shadow 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.button.small {
+    padding: 0.35rem 0.7rem;
+    font-size: 0.85rem;
 }
 
 .button:hover,

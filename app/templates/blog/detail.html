@@ -69,6 +69,14 @@
                             </a>
                         </strong>
                         <span>{{ comment['created_at'] }}</span>
+                        {% if current_user.is_authenticated and (current_user.is_admin or comment['author'] == current_user.username) %}
+                            <form method="post"
+                                  action="{{ url_for('blog.delete_comment', post_id=post['id'], comment_id=comment['id']) }}"
+                                  class="comment-delete-form"
+                                  onsubmit="return confirm('确定要删除这条评论吗？');">
+                                <button type="submit" class="button danger ghost small">删除</button>
+                            </form>
+                        {% endif %}
                     </div>
                     <div class="comment-body markdown-body">
                         {{ comment['content'] | markdown }}
