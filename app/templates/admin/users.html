@@ -16,7 +16,7 @@
 
 <section class="card">
     <h2>筛选用户</h2>
-    <form class="form-grid" method="get">
+    <form id="user-filter-form" class="form-grid" method="get">
         <div class="form-field">
             <label for="filter-username">用户名</label>
             <input type="text"
@@ -33,40 +33,84 @@
                    value="{{ filters.real_name }}"
                    placeholder="支持模糊匹配，例如：王">
         </div>
-        <div class="form-field">
-            <label for="filter-constant">固定标签</label>
-            <input type="text"
-                   id="filter-constant"
-                   name="constant_tag"
-                   value="{{ filters.constant_tag }}"
-                   placeholder="用逗号分隔多个标签，例如：学生会, 摄影">
-            <p class="field-hint">需全部命中方才显示（忽略大小写）。</p>
-        </div>
+        <fieldset class="form-field tag-filter-field">
+            <legend>固定标签</legend>
+            {% if constant_tags %}
+                <div class="checkbox-chip-group">
+                    {% for tag in constant_tags %}
+                        <label class="checkbox-chip">
+                            <input type="checkbox"
+                                   name="constant_tag"
+                                   value="{{ tag }}"
+                                   {% if tag in filters.constant_tags %}checked{% endif %}>
+                            <span>{{ tag }}</span>
+                        </label>
+                    {% endfor %}
+                </div>
+                <p class="field-hint">选择标签后自动应用筛选，可多选，需要全部命中。</p>
+            {% else %}
+                <p class="field-hint">暂无固定标签可供筛选。</p>
+            {% endif %}
+        </fieldset>
         <div class="form-actions">
             <button type="submit" class="button primary">应用筛选</button>
             <a class="button ghost" href="{{ url_for('admin.user_list') }}">重置</a>
         </div>
     </form>
-    {% if normal_tags %}
-        <div class="tag-collection" aria-label="常用标签库">
-            {% for tag in normal_tags %}
-                <span class="tag-chip">{{ tag }}</span>
-            {% endfor %}
-        </div>
-    {% endif %}
     <p class="muted-text">符合条件：{{ matched_count }} / {{ total_users }} 人</p>
 </section>
 
 <section class="card">
-    <h2>批量修改</h2>
+    <h2>批量固定标签</h2>
+    <form id="bulk-tag-form" class="bulk-tag-form" method="post" action="{{ url_for('admin.bulk_update_user_tags') }}">
+        <fieldset class="bulk-tag-mode">
+            <legend>选择操作</legend>
+            <label class="radio-chip">
+                <input type="radio" name="operation" value="add" checked>
+                <span>添加固定标签</span>
+            </label>
+            <label class="radio-chip">
+                <input type="radio" name="operation" value="remove">
+                <span>移除固定标签</span>
+            </label>
+        </fieldset>
+        <fieldset class="bulk-tag-options">
+            <legend>选择固定标签</legend>
+            {% if constant_tags %}
+                <div class="checkbox-chip-group">
+                    {% for tag in constant_tags %}
+                        <label class="checkbox-chip">
+                            <input type="checkbox" name="tags" value="{{ tag }}">
+                            <span>{{ tag }}</span>
+                        </label>
+                    {% endfor %}
+                </div>
+                <p class="field-hint">先选择操作与标签，再在下方列表勾选用户并应用。</p>
+            {% else %}
+                <p class="field-hint">暂无固定标签，请在管理后台先添加。</p>
+            {% endif %}
+        </fieldset>
+        <input type="hidden" name="return_to" value="{{ request.full_path.rstrip('?') }}">
+        <button type="submit" class="button primary" data-role="bulk-apply" {% if not constant_tags %}disabled{% endif %}>
+            应用到选中用户
+        </button>
+    </form>
+</section>
+
+<section class="card">
+    <h2>用户列表</h2>
     <div class="responsive-table">
         <table>
             <thead>
             <tr>
+                <th class="select-column">
+                    <label class="sr-only" for="bulk-select-all">全选用户</label>
+                    <input type="checkbox" id="bulk-select-all">
+                </th>
                 <th>真实姓名</th>
                 <th>用户名</th>
                 <th>角色</th>
-                <th>固定标签（逗号分隔）</th>
+                <th>固定标签</th>
                 <th>操作</th>
             </tr>
             </thead>
@@ -75,6 +119,14 @@
                 {% for user in users %}
                     {% set form_id = 'user-form-' ~ loop.index %}
                     <tr>
+                        <td class="select-column">
+                            <input type="checkbox"
+                                   class="bulk-user-checkbox"
+                                   form="bulk-tag-form"
+                                   name="usernames"
+                                   value="{{ user['username'] }}"
+                                   aria-label="选择 {{ user['username'] }}">
+                        </td>
                         <td>
                             <div class="table-control">
                                 <input type="text"
@@ -100,14 +152,15 @@
                             </div>
                         </td>
                         <td>
-                            <div class="table-control">
-                                <input type="text"
-                                       name="constant_tags"
-                                       form="{{ form_id }}"
-                                       value="{{ user['constant_tags'] | join(', ') }}"
-                                       placeholder="例如：学生会, 摄影"
-                                       class="table-input">
-                            </div>
+                            {% if user['constant_tags'] %}
+                                <div class="tag-collection compact">
+                                    {% for tag in user['constant_tags'] %}
+                                        <span class="tag-badge">{{ tag }}</span>
+                                    {% endfor %}
+                                </div>
+                            {% else %}
+                                <span class="tag-placeholder">无固定标签</span>
+                            {% endif %}
                         </td>
                         <td>
                             <form id="{{ form_id }}" method="post" action="{{ url_for('admin.update_user') }}">
@@ -120,11 +173,90 @@
                 {% endfor %}
             {% else %}
                 <tr>
-                    <td colspan="5">暂无符合条件的用户，请调整筛选条件。</td>
+                    <td colspan="6">暂无符合条件的用户，请调整筛选条件。</td>
                 </tr>
             {% endif %}
             </tbody>
         </table>
     </div>
 </section>
+{% endblock %}
+
+{% block extra_scripts %}
+{{ super() }}
+<script>
+    (function () {
+        const filterForm = document.getElementById('user-filter-form');
+        if (filterForm) {
+            const tagFilters = filterForm.querySelectorAll('input[type="checkbox"][name="constant_tag"]');
+            tagFilters.forEach(function (checkbox) {
+                checkbox.addEventListener('change', function () {
+                    if (typeof filterForm.requestSubmit === 'function') {
+                        filterForm.requestSubmit();
+                    } else {
+                        filterForm.submit();
+                    }
+                });
+            });
+        }
+
+        const bulkForm = document.getElementById('bulk-tag-form');
+        if (!bulkForm) {
+            return;
+        }
+        const applyButton = bulkForm.querySelector('[data-role="bulk-apply"]');
+        const tagInputs = Array.from(bulkForm.querySelectorAll('input[name="tags"]'));
+        const userCheckboxes = Array.from(document.querySelectorAll('.bulk-user-checkbox'));
+        const selectAll = document.getElementById('bulk-select-all');
+
+        function updateSelectAll() {
+            if (!selectAll) {
+                return;
+            }
+            if (!userCheckboxes.length) {
+                selectAll.checked = false;
+                selectAll.indeterminate = false;
+                selectAll.disabled = true;
+                return;
+            }
+            selectAll.disabled = false;
+            const checkedCount = userCheckboxes.filter(function (input) {
+                return input.checked;
+            }).length;
+            selectAll.checked = checkedCount === userCheckboxes.length && checkedCount > 0;
+            selectAll.indeterminate = checkedCount > 0 && checkedCount < userCheckboxes.length;
+        }
+
+        function updateApplyState() {
+            const hasTag = tagInputs.some(function (input) {
+                return input.checked;
+            });
+            const hasUser = userCheckboxes.some(function (input) {
+                return input.checked;
+            });
+            if (applyButton) {
+                applyButton.disabled = !(hasTag && hasUser);
+            }
+            updateSelectAll();
+        }
+
+        tagInputs.forEach(function (input) {
+            input.addEventListener('change', updateApplyState);
+        });
+        userCheckboxes.forEach(function (input) {
+            input.addEventListener('change', updateApplyState);
+        });
+
+        if (selectAll) {
+            selectAll.addEventListener('change', function () {
+                userCheckboxes.forEach(function (input) {
+                    input.checked = Boolean(selectAll.checked);
+                });
+                updateApplyState();
+            });
+        }
+
+        updateApplyState();
+    }());
+</script>
 {% endblock %}

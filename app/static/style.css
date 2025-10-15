@@ -914,23 +914,82 @@ main {
     }
 
     .select-shell select {
-        background: rgba(79, 70, 229, 0.18);
-        border-color: rgba(129, 140, 248, 0.35);
-        color: var(--text-color);
+        background: rgba(15, 23, 42, 0.92);
+        border-color: rgba(148, 163, 184, 0.55);
+        color: rgba(236, 241, 255, 0.98);
+        box-shadow: inset 0 0 0 1px rgba(99, 102, 241, 0.18);
+    }
+
+    .select-shell select option {
+        background: rgba(15, 23, 42, 0.98);
+        color: rgba(236, 241, 255, 0.98);
+    }
+
+    .select-shell select:focus {
+        border-color: rgba(165, 180, 252, 0.65);
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.35);
+        background: rgba(30, 41, 59, 0.88);
     }
 
     .select-shell::after {
-        border-color: rgba(203, 213, 225, 0.85);
+        border-color: rgba(226, 232, 240, 0.9);
     }
 
     .table-input {
-        background: rgba(15, 23, 42, 0.85);
-        border-color: rgba(129, 140, 248, 0.35);
+        background: rgba(16, 21, 34, 0.96);
+        border-color: rgba(120, 131, 210, 0.55);
+        color: rgba(248, 250, 255, 0.98);
+        caret-color: rgba(248, 250, 255, 0.98);
+    }
+
+    .table-input::placeholder {
+        color: rgba(198, 211, 236, 0.68);
     }
 
     .table-input:focus {
-        border-color: rgba(129, 140, 248, 0.6);
-        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.28);
+        border-color: rgba(165, 180, 252, 0.72);
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.4);
+        background: rgba(30, 39, 64, 0.97);
+    }
+
+    .bulk-tag-form fieldset,
+    .form-field.tag-filter-field {
+        background: rgba(12, 18, 32, 0.95);
+        border-color: rgba(118, 130, 204, 0.55);
+    }
+
+    .bulk-tag-form legend,
+    .form-field.tag-filter-field legend {
+        background: rgba(12, 18, 32, 0.95);
+        color: rgba(234, 238, 255, 0.96);
+    }
+
+    .checkbox-chip span,
+    .radio-chip span {
+        border-color: rgba(118, 130, 204, 0.6);
+        background: rgba(34, 44, 73, 0.85);
+        color: rgba(210, 218, 249, 0.9);
+    }
+
+    .checkbox-chip:hover span,
+    .radio-chip:hover span,
+    .checkbox-chip:focus-within span,
+    .radio-chip:focus-within span {
+        border-color: rgba(165, 180, 252, 0.75);
+        background: rgba(99, 102, 241, 0.38);
+        color: rgba(240, 244, 255, 0.99);
+    }
+
+    .checkbox-chip input,
+    .radio-chip input {
+        accent-color: rgba(165, 180, 252, 0.85);
+    }
+
+    .checkbox-chip input:checked + span,
+    .radio-chip input:checked + span {
+        border-color: rgba(188, 199, 255, 0.85);
+        background: rgba(99, 102, 241, 0.6);
+        color: rgba(250, 252, 255, 1);
     }
 }
 
@@ -950,6 +1009,143 @@ main {
     display: flex;
     flex-wrap: wrap;
     gap: 0.45rem;
+}
+
+.tag-collection.compact {
+    gap: 0.35rem;
+}
+
+.tag-placeholder {
+    color: var(--text-subtle);
+    font-size: 0.85rem;
+}
+
+.checkbox-chip-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.45rem;
+}
+
+.checkbox-chip,
+.radio-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    cursor: pointer;
+    font-size: 0.82rem;
+    color: var(--text-muted);
+}
+
+.checkbox-chip input,
+.radio-chip input {
+    margin: 0;
+    width: 1rem;
+    height: 1rem;
+    accent-color: var(--primary);
+}
+
+.checkbox-chip span,
+.radio-chip span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.35rem 0.85rem;
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, 0.4);
+    background: rgba(148, 163, 184, 0.12);
+    font-weight: 600;
+    color: var(--text-color);
+    transition: background 0.2s ease, border 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.checkbox-chip:hover span,
+.radio-chip:hover span,
+.checkbox-chip:focus-within span,
+.radio-chip:focus-within span {
+    transform: translateY(-1px);
+    border-color: rgba(79, 70, 229, 0.4);
+    background: rgba(79, 70, 229, 0.12);
+    color: var(--primary);
+}
+
+.checkbox-chip input:checked + span,
+.radio-chip input:checked + span {
+    border-color: rgba(79, 70, 229, 0.55);
+    background: rgba(79, 70, 229, 0.18);
+    color: var(--primary);
+}
+
+.bulk-tag-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.bulk-tag-form fieldset {
+    margin: 0;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 1.2rem 1rem 1rem;
+    background: rgba(255, 255, 255, 0.82);
+    position: relative;
+}
+
+.bulk-tag-form legend {
+    font-weight: 600;
+    margin: 0;
+    font-size: 0.9rem;
+    color: var(--text-color);
+    padding: 0 0.6rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.82);
+    display: inline-flex;
+    align-items: center;
+    line-height: 1.2;
+}
+
+.bulk-tag-mode,
+.bulk-tag-options {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+}
+
+.bulk-tag-form .field-hint {
+    margin-top: 0.4rem;
+}
+
+.select-column {
+    width: 3rem;
+    text-align: center;
+    vertical-align: middle;
+}
+
+.select-column input[type="checkbox"] {
+    width: 1.1rem;
+    height: 1.1rem;
+    accent-color: var(--primary);
+}
+
+.form-field.tag-filter-field {
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 1.2rem 1rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+    background: rgba(255, 255, 255, 0.82);
+    position: relative;
+}
+
+.form-field.tag-filter-field legend {
+    font-weight: 600;
+    color: var(--text-color);
+    padding: 0 0.6rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.82);
+    display: inline-flex;
+    align-items: center;
+    line-height: 1.2;
 }
 
 .grid.two-column {
@@ -1062,6 +1258,11 @@ th {
     transition: border 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
 }
 
+.select-shell select option {
+    color: var(--text-color);
+    background: var(--surface-color);
+}
+
 .select-shell::after {
     content: '';
     position: absolute;
@@ -1091,6 +1292,10 @@ th {
     font: inherit;
     color: inherit;
     transition: border 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.table-input::placeholder {
+    color: rgba(148, 163, 184, 0.8);
 }
 
 .table-input:focus {
@@ -1134,6 +1339,65 @@ th {
     padding: 0;
     display: grid;
     gap: 1.2rem;
+}
+
+@media (prefers-color-scheme: dark) {
+    .bulk-tag-form fieldset,
+    .form-field.tag-filter-field {
+        background: rgba(10, 14, 24, 0.96);
+        border-color: rgba(120, 132, 214, 0.6);
+    }
+
+    .bulk-tag-form legend,
+    .form-field.tag-filter-field legend {
+        background: rgba(10, 14, 24, 0.96);
+        color: rgba(236, 240, 255, 0.98);
+    }
+
+    .checkbox-chip span,
+    .radio-chip span {
+        border-color: rgba(128, 140, 228, 0.65);
+        background: rgba(38, 50, 83, 0.82);
+        color: rgba(224, 231, 255, 0.94);
+    }
+
+    .checkbox-chip:hover span,
+    .radio-chip:hover span,
+    .checkbox-chip:focus-within span,
+    .radio-chip:focus-within span {
+        border-color: rgba(174, 186, 255, 0.85);
+        background: rgba(99, 102, 241, 0.52);
+        color: rgba(245, 248, 255, 1);
+    }
+
+    .checkbox-chip input,
+    .radio-chip input {
+        accent-color: rgba(174, 186, 255, 0.9);
+    }
+
+    .checkbox-chip input:checked + span,
+    .radio-chip input:checked + span {
+        border-color: rgba(190, 200, 255, 0.9);
+        background: rgba(99, 102, 241, 0.68);
+        color: rgba(252, 253, 255, 1);
+    }
+
+    .table-input {
+        background: rgba(12, 18, 32, 0.97);
+        border-color: rgba(142, 154, 232, 0.65);
+        color: rgba(248, 250, 255, 0.99);
+        caret-color: rgba(248, 250, 255, 0.99);
+    }
+
+    .table-input::placeholder {
+        color: rgba(202, 214, 240, 0.75);
+    }
+
+    .table-input:focus {
+        background: rgba(24, 32, 56, 0.98);
+        border-color: rgba(176, 190, 255, 0.88);
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.45);
+    }
 }
 
 .tag-node {
