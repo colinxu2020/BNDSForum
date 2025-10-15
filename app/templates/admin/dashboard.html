@@ -14,8 +14,8 @@
     <div class="card">
         <h2>常用标签</h2>
         <form class="form-inline" method="post" action="{{ url_for('admin.add_normal_tag') }}">
-            <label class="sr-only" for="tag_name">新增标签</label>
-            <input type="text" id="tag_name" name="tag_name" placeholder="输入标签名称" required>
+            <label class="sr-only" for="normal_tag_name">新增标签</label>
+            <input type="text" id="normal_tag_name" name="tag_name" placeholder="输入标签名称" required>
             <button type="submit" class="button primary">添加</button>
         </form>
         {% if normal_tags %}
@@ -36,6 +36,31 @@
     </div>
 
     <div class="card">
+        <h2>固定标签</h2>
+        <p class="form-tip">固定标签可分配给用户并自动同步到其文章。</p>
+        <form class="form-inline" method="post" action="{{ url_for('admin.add_constant_tag') }}">
+            <label class="sr-only" for="constant_tag_name">新增固定标签</label>
+            <input type="text" id="constant_tag_name" name="tag_name" placeholder="输入固定标签" required>
+            <button type="submit" class="button primary">添加</button>
+        </form>
+        {% if constant_tags %}
+            <ul class="tag-manage-list">
+                {% for tag in constant_tags %}
+                    <li>
+                        <span>{{ tag }}</span>
+                        <form method="post" action="{{ url_for('admin.delete_constant_tag') }}" onsubmit="return confirm('确定删除该固定标签并移除所有关联吗？');">
+                            <input type="hidden" name="tag_name" value="{{ tag }}">
+                            <button type="submit" class="button danger ghost">删除</button>
+                        </form>
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p class="empty-state">暂无固定标签。</p>
+        {% endif %}
+    </div>
+
+    <div class="card">
         <h2>添加标签树节点</h2>
         <form class="form-grid" method="post" action="{{ url_for('admin.add_tree_node') }}">
             <div class="form-field">
@@ -47,8 +72,25 @@
                 </select>
             </div>
             <div class="form-field">
-                <label for="node_tag">节点标签（留空创建占位节点）</label>
-                <input type="text" id="node_tag" name="tag" placeholder="例如：科技社团">
+                <label for="node_tag">节点标签</label>
+                <select id="node_tag" name="tag_name">
+                    <option value="">（不设置标签）</option>
+                    {% if constant_tags %}
+                        <optgroup label="固定标签">
+                            {% for tag in constant_tags %}
+                                <option value="{{ tag }}">{{ tag }}</option>
+                            {% endfor %}
+                        </optgroup>
+                    {% endif %}
+                    {% if normal_tags %}
+                        <optgroup label="常用标签">
+                            {% for tag in normal_tags %}
+                                <option value="{{ tag }}">{{ tag }}</option>
+                            {% endfor %}
+                        </optgroup>
+                    {% endif %}
+                </select>
+                <p class="field-hint">可选择已存在的常用或固定标签；留空创建占位节点。</p>
             </div>
             <div class="form-actions">
                 <button type="submit" class="button primary">添加节点</button>

@@ -9,6 +9,7 @@ data/
 *.py[cod]
 *$py.class
 node_modules/
+AGENTS.md
 
 # C extensions
 *.so
