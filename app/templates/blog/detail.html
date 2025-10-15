@@ -1,5 +1,16 @@
 {% extends "base.html" %}
+{% import "_macros/assets.html" as assets with context %}
 {% block title %}{{ post['title'] }} - BNDS Blog{% endblock %}
+{% block extra_head %}
+    {{ super() }}
+    {{ assets.markdown_view_styles() }}
+    {{ assets.markdown_editor_styles() }}
+{% endblock %}
+{% block extra_scripts %}
+    {{ super() }}
+    {{ assets.markdown_view_scripts() }}
+    {{ assets.markdown_editor_scripts() }}
+{% endblock %}
 {% block content %}
 <article class="post-detail card">
     <header class="post-header">

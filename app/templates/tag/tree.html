@@ -42,3 +42,30 @@
     </ul>
 </section>
 {% endblock %}
+{% block extra_scripts %}
+    {{ super() }}
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            document.querySelectorAll('.tag-toggle').forEach(function (button) {
+                var targetSelector = button.getAttribute('data-toggle');
+                if (!targetSelector) {
+                    return;
+                }
+                button.addEventListener('click', function () {
+                    var target = document.querySelector(targetSelector);
+                    if (!target) {
+                        return;
+                    }
+                    var expanded = button.getAttribute('aria-expanded') === 'true';
+                    var nextState = !expanded;
+                    button.setAttribute('aria-expanded', nextState.toString());
+                    if (nextState) {
+                        target.classList.remove('is-collapsed');
+                    } else {
+                        target.classList.add('is-collapsed');
+                    }
+                });
+            });
+        });
+    </script>
+{% endblock %}

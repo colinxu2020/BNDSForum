@@ -1,7 +1,5 @@
-@import url('vendor/fonts/fonts.css');
-
 :root {
-    --font-sans: 'Inter', 'Noto Sans SC', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     --bg-gradient: radial-gradient(circle at top, rgba(79, 70, 229, 0.12), transparent 55%),
                    linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
     --bg-color: #f5f7fb;
@@ -23,7 +21,7 @@
     --danger-dark: #dc2626;
     --success: #22c55e;
     --info: #0ea5e9;
-    --font-mono: 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 }
 
 @media (prefers-color-scheme: dark) {
