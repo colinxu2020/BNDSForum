@@ -196,6 +196,7 @@ class PerformanceTest:
         self.seed_posts = args.seed_posts
         self.db_path = Path(args.db_path)
         self.backup_path: Optional[Path] = None
+        self._backup_entries: List[Tuple[Path, Path]] = []
         self.metrics = MetricsCollector()
         self.shared_state = SharedState()
         self._rng = random.Random(args.seed)
@@ -205,17 +206,52 @@ class PerformanceTest:
         if not self.db_path.exists():
             raise FileNotFoundError(f"数据库不存在：{self.db_path}")
         timestamp = time.strftime("%Y%m%d-%H%M%S")
-        backup_name = f"{self.db_path.name}.perf-backup-{timestamp}"
-        self.backup_path = self.db_path.parent / backup_name
-        shutil.copy2(self.db_path, self.backup_path)
-        print(f"[备份] 数据库已备份到 {self.backup_path}")
+        self._backup_entries = []
+
+        def _copy_with_suffix(source: Path) -> Optional[Path]:
+            backup_name = f"{source.name}.perf-backup-{timestamp}"
+            backup_path = source.parent / backup_name
+            shutil.copy2(source, backup_path)
+            self._backup_entries.append((source, backup_path))
+            return backup_path
+
+        self.backup_path = _copy_with_suffix(self.db_path)
+
+        for sidecar in self._journal_sidecar_paths():
+            if sidecar.exists():
+                _copy_with_suffix(sidecar)
+
+        if not self.backup_path:
+            raise RuntimeError("备份数据库失败：未能创建主数据库备份文件")
+
+        backed_files = ", ".join(str(entry[1]) for entry in self._backup_entries)
+        print(f"[备份] 数据库及关联文件已备份到 {backed_files}")
 
     def restore_database(self) -> None:
-        if self.backup_path and self.backup_path.exists():
-            shutil.copy2(self.backup_path, self.db_path)
-            print(f"[还原] 数据库已从 {self.backup_path.name} 恢复")
-        else:
+        if not self._backup_entries:
             print("[警告] 未找到备份文件，无法还原数据库")
+            return
+
+        for original, backup in self._backup_entries:
+            if backup.exists():
+                shutil.copy2(backup, original)
+                print(f"[还原] {original.name} 已从 {backup.name} 恢复")
+            elif original.exists():
+                original.unlink()
+                print(f"[还原] 已删除 {original.name}（对应备份缺失）")
+
+        backed_originals = {original for original, _ in self._backup_entries}
+        for sidecar in self._journal_sidecar_paths():
+            if sidecar not in backed_originals and sidecar.exists():
+                sidecar.unlink()
+                print(f"[还原] 已移除过期文件 {sidecar.name}")
+
+    def _journal_sidecar_paths(self) -> List[Path]:
+        base_name = self.db_path.name
+        return [
+            self.db_path.with_name(f"{base_name}-wal"),
+            self.db_path.with_name(f"{base_name}-shm"),
+        ]
 
     def _build_operations(self) -> List[Operation]:
         return [
