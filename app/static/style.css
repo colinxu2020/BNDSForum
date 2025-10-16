@@ -721,6 +721,15 @@ main {
     font: inherit;
 }
 
+.input-search {
+    width: 100%;
+    padding: 0.65rem 0.8rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid rgba(148, 163, 184, 0.35);
+    background: rgba(255, 255, 255, 0.85);
+    font: inherit;
+}
+
 .form-field textarea {
     min-height: 220px;
     resize: vertical;

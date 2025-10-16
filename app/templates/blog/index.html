@@ -4,6 +4,17 @@
 {% block extra_head %}
     {{ super() }}
     {{ assets.markdown_view_styles() }}
+    <style>
+        .search-results-info {
+            margin: 1rem 0;
+            padding: 0.5rem;
+            background: #f5f5f5;
+            border-radius: 4px;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
 {% endblock %}
 {% block extra_scripts %}
     {{ super() }}
@@ -33,49 +44,431 @@
     {% endif %}
 </section>
 
+<section>
+    <script type="application/ld+json" id="datas"> 
+    {{posts}}
+    </script>
+    
+    <div class="search-section">
+        <input type="text" id="searchInput" class="input-search" placeholder="输入搜索关键字" required>
+        <button id="searchBtn" class="button primary">搜索</button>
+        <button id="resetBtn" class="button secondary">重置</button>
+    </div>
+    
+    <div id="searchResultsInfo" class="search-results-info hidden"></div>
+</section>
+
 <section class="post-list">
-    {% if posts %}
-        {% for post in posts %}
-            <article class="post-card card">
-                <header>
-                    <h2><a href="{{ url_for('blog.detail', post_id=post['id']) }}">{{ post['title'] }}</a></h2>
-                    <div class="post-meta">
-                        <span>
-                            作者：
-                            <a href="{{ url_for('blog.user_profile', username=post['author_username']) }}">
-                                {% if post['author_real_name'] %}
-                                    {{ post['author_real_name'] }}（{{ post['author_username'] }}）
-                                {% else %}
-                                    {{ post['author_username'] }}
-                                {% endif %}
-                            </a>
-                        </span>
-                        <span>发布：{{ post['created_at'] }}</span>
-                        <span>更新：{{ post['updated_at'] }}</span>
-                    </div>
-                </header>
-                {% if post['tags'] %}
-                    <div class="post-tags">
-                        {% for tag in post['tags'] %}
-                            <span class="tag-badge">{{ tag }}</span>
-                        {% endfor %}
-                    </div>
-                {% endif %}
-                <div class="post-excerpt markdown-body clamp-4">
-                    {{ post['content'] | markdown }}
-                </div>
-                <div class="post-footer">
-                    <a class="link-more" href="{{ url_for('blog.detail', post_id=post['id']) }}">阅读全文</a>
-                    {% if current_user.is_authenticated and (current_user.is_admin or post['author_username'] == current_user.username) %}
-                        <div class="post-shortcuts">
-                            <a href="{{ url_for('blog.edit', post_id=post['id']) }}">编辑</a>
+    <!-- 原始文章列表 -->
+    <div id="originalPosts">
+        {% if posts %}
+            {% for post in posts %}
+                <article class="post-card card" data-post-id="{{ post['id'] }}">
+                    <header>
+                        <h2><a href="{{ url_for('blog.detail', post_id=post['id']) }}">{{ post['title'] }}</a></h2>
+                        <div class="post-meta">
+                            <span>
+                                作者：
+                                <a href="{{ url_for('blog.user_profile', username=post['author_username']) }}">
+                                    {% if post['author_real_name'] %}
+                                        {{ post['author_real_name'] }}（{{ post['author_username'] }}）
+                                    {% else %}
+                                        {{ post['author_username'] }}
+                                    {% endif %}
+                                </a>
+                            </span>
+                            <span>发布：{{ post['created_at'] }}</span>
+                            <span>更新：{{ post['updated_at'] }}</span>
+                        </div>
+                    </header>
+                    {% if post['tags'] %}
+                        <div class="post-tags">
+                            {% for tag in post['tags'] %}
+                                <span class="tag-badge">{{ tag }}</span>
+                            {% endfor %}
                         </div>
                     {% endif %}
+                    <div class="post-excerpt markdown-body clamp-4">
+                        {{ post['content'] | markdown }}
+                    </div>
+                    <div class="post-footer">
+                        <a class="link-more" href="{{ url_for('blog.detail', post_id=post['id']) }}">阅读全文</a>
+                        {% if current_user.is_authenticated and (current_user.is_admin or post['author_username'] == current_user.username) %}
+                            <div class="post-shortcuts">
+                                <a href="{{ url_for('blog.edit', post_id=post['id']) }}">编辑</a>
+                            </div>
+                        {% endif %}
+                    </div>
+                </article>
+            {% endfor %}
+        {% else %}
+            <p class="empty-state">还没有文章，成为第一位作者吧！</p>
+        {% endif %}
+    </div>
+    
+    <!-- 搜索结果容器 -->
+    <div id="searchResults" class="hidden"></div>
+</section>
+
+<script>
+    // 工具函数
+var HtmlUtil = {
+    htmlEncode: function(html) {
+        var tempDiv = document.createElement('div');
+        (tempDiv.textContent != undefined) ? (tempDiv.textContent = html) : (tempDiv.innerText = html);
+        var output = tempDiv.innerHTML;
+        tempDiv = null;
+        return output;
+    },
+    
+    htmlDecode: function(text) {
+        var tempDiv = document.createElement('div');
+        tempDiv.innerHTML = text;
+        var output = tempDiv.innerText || tempDiv.textContent;
+        tempDiv = null;
+        return output;
+    }
+};
+
+// 搜索功能
+class PostSearch {
+constructor() {
+    this.originalPosts = document.getElementById('originalPosts');
+    this.searchResults = document.getElementById('searchResults');
+    this.searchInfo = document.getElementById('searchResultsInfo');
+    this.searchInput = document.getElementById('searchInput');
+    this.searchBtn = document.getElementById('searchBtn');
+    this.resetBtn = document.getElementById('resetBtn');
+    
+    this.allPosts = this.loadPostsData();
+    
+    // 立即执行空搜索
+    this.displayAllPosts();
+    
+    this.bindEvents();
+}
+    
+    // 加载文章数据
+    loadPostsData() {
+        try {
+            const postsElement = document.getElementById("datas");
+            if (!postsElement) {
+                console.error('找不到文章数据元素');
+                return [];
+            }
+            
+            const posts = HtmlUtil.htmlDecode(postsElement.innerHTML);
+            return JSON.parse(posts.replace(/'/g, '"'));
+        } catch (error) {
+            console.error('加载文章数据失败:', error);
+            return [];
+        }
+    }
+    
+    // 绑定事件
+    bindEvents() {
+        this.searchBtn.addEventListener('click', () => this.performSearch());
+        this.resetBtn.addEventListener('click', () => this.resetSearch());
+        this.searchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                this.performSearch();
+            }
+        });
+        
+        // 添加输入时实时搜索
+        this.searchInput.addEventListener('input', () => {
+            clearTimeout(this.searchTimeout);
+            this.searchTimeout = setTimeout(() => {
+                this.performSearch();
+            }, 300);
+        });
+    }
+    
+    // 执行搜索
+    performSearch() {
+        const keyword = this.searchInput.value.trim();
+        
+        // 如果关键词为空，显示所有文章
+        if (!keyword) {
+            this.displayAllPosts();
+            return;
+        }
+        
+        const results = this.searchPosts(keyword);
+        this.displayResults(results, keyword);
+    }
+    
+// 显示所有文章
+displayAllPosts() {
+    // 隐藏原始列表，显示结果容器
+    this.originalPosts.classList.add('hidden');
+    this.searchResults.classList.remove('hidden');
+    
+    // 隐藏搜索信息区域
+    this.searchInfo.classList.add('hidden');
+    
+    // 生成所有文章的HTML
+    if (this.allPosts.length === 0) {
+        this.searchResults.innerHTML = '<p class="empty-state">还没有文章，成为第一位作者吧！</p>';
+    } else {
+        this.searchResults.innerHTML = this.allPosts.map(post => this.generatePostHTML(post, '')).join('');
+    }
+}
+
+// 修改构造函数，在初始化时自动执行空搜索
+// constructor() {
+//     this.originalPosts = document.getElementById('originalPosts');
+//     this.searchResults = document.getElementById('searchResults');
+//     this.searchInfo = document.getElementById('searchResultsInfo');
+//     this.searchInput = document.getElementById('searchInput');
+//     this.searchBtn = document.getElementById('searchBtn');
+//     this.resetBtn = document.getElementById('resetBtn');
+    
+//     this.allPosts = this.loadPostsData();
+    
+//     // 立即执行空搜索
+//     this.displayAllPosts();
+    
+//     this.bindEvents();
+// }
+    
+    // 搜索文章
+    searchPosts(keyword) {
+        const lowerKeyword = keyword.toLowerCase();
+        
+        return this.allPosts.filter(item => {
+            if (!item) return false;
+            
+            const searchFields = [
+                item.title,
+                item.content,
+                item.author_username,
+                item.author_real_name
+            ];
+            
+            return searchFields.some(field => 
+                field && field.toLowerCase().includes(lowerKeyword)
+            );
+        });
+    }
+    
+    // 显示搜索结果
+    displayResults(results, keyword) {
+        // 隐藏原始列表，显示结果容器
+        this.originalPosts.classList.add('hidden');
+        this.searchResults.classList.remove('hidden');
+        this.searchInfo.classList.remove('hidden');
+        
+        // 更新搜索结果信息
+        const resultText = results.length === 1 ? '篇' : '篇';
+        this.searchInfo.innerHTML = `找到 ${results.length} ${resultText}与"<strong>${this.escapeHtml(keyword)}</strong>"相关的文章`;
+        
+        // 生成搜索结果HTML
+        if (results.length === 0) {
+            this.searchResults.innerHTML = '<p class="empty-state">没有找到相关文章，请尝试其他关键词</p>';
+        } else {
+            this.searchResults.innerHTML = results.map(post => this.generatePostHTML(post, keyword)).join('');
+        }
+    }
+    
+    // 生成文章HTML（带高亮）
+    generatePostHTML(post, keyword) {
+        // 高亮处理函数
+        const highlightText = (text) => {
+            if (!text || !keyword) return this.escapeHtml(text);
+            
+            const regex = new RegExp(`(${this.escapeRegex(keyword)})`, 'gi');
+            return this.escapeHtml(text).replace(regex, '<mark class="search-highlight">$1</mark>');
+        };
+        
+        // 生成标签HTML
+        const tagsHTML = post.tags && post.tags.length > 0 ? 
+            `<div class="post-tags">
+                ${post.tags.map(tag => `<span class="tag-badge">${this.escapeHtml(tag)}</span>`).join('')}
+            </div>` : '';
+        
+        // 处理作者显示
+        let authorDisplay = post.author_username;
+        if (post.author_real_name) {
+            authorDisplay = `${post.author_real_name} (${post.author_username})`;
+        }
+        
+        return `
+            <article class="post-card card" data-post-id="${post.id}">
+                <header>
+                    <h2><a href="/post/${post.id}" target="_blank">${highlightText(post.title)}</a></h2>
+                    <div class="post-meta">
+                        <span>作者：<a style = "color:#a29bfe" href="/blog/user/${post.author_username}">${highlightText(authorDisplay)}</a></span>
+                        <span>发布：${post.created_at}</span>
+                        <span>更新：${post.updated_at}</span>
+                    </div>
+                </header>
+                ${tagsHTML}
+                <div class="post-excerpt markdown-body clamp-4">
+                    ${this.generateContentExcerpt(post.content, keyword)}
+                </div>
+                <div class="post-footer">
+                    <a class="link-more" href="/blog/detail/${post.id}">阅读全文</a>
                 </div>
             </article>
-        {% endfor %}
-    {% else %}
-        <p class="empty-state">还没有文章，成为第一位作者吧！</p>
-    {% endif %}
-</section>
+        `;
+    }
+    
+    // 生成内容摘要（安全处理）
+    generateContentExcerpt(content, keyword, maxLength = 200) {
+        if (!content) return '';
+        
+        // 转换为纯文本
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = content;
+        const plainText = tempDiv.textContent || tempDiv.innerText || '';
+        
+        // 查找关键词位置
+        const lowerText = plainText.toLowerCase();
+        const lowerKeyword = keyword.toLowerCase();
+        const keywordIndex = lowerText.indexOf(lowerKeyword);
+        
+        let excerpt = '';
+        if (keywordIndex !== -1) {
+            // 以关键词为中心截取
+            const start = Math.max(0, keywordIndex - 50);
+            const end = Math.min(plainText.length, keywordIndex + keyword.length + 50);
+            excerpt = plainText.substring(start, end);
+            
+            if (start > 0) excerpt = '...' + excerpt;
+            if (end < plainText.length) excerpt = excerpt + '...';
+        } else {
+            // 普通截取
+            excerpt = plainText.length > maxLength ? 
+                plainText.substring(0, maxLength) + '...' : 
+                plainText;
+        }
+        
+        // 高亮关键词
+        const regex = new RegExp(`(${this.escapeRegex(keyword)})`, 'gi');
+        return this.escapeHtml(excerpt).replace(regex, '<mark class="search-highlight">$1</mark>');
+    }
+    
+    // 重置搜索
+    resetSearch() {
+        this.searchInput.value = '';
+        // 重置时也显示所有文章
+        this.displayAllPosts();
+    }
+    
+    // 显示消息
+    showMessage(message, type = 'info') {
+        alert(message);
+    }
+    
+    // 工具方法
+    escapeHtml(unsafe) {
+        if (!unsafe) return '';
+        return unsafe
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+    
+    escapeRegex(string) {
+        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+}
+
+// 页面加载完成后初始化
+document.addEventListener('DOMContentLoaded', function() {
+    new PostSearch();
+});
+
+</script>
+
+<style>
+    .search-highlight {
+    background-color: #ffeb3b;
+    color: #000;
+    /* padding: 2px 4px; */
+    border-radius: 1px;
+    font-weight: bold;
+}
+
+.search-section {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.input-search {
+    flex: 1;  /* 让搜索框占据剩余所有空间 */
+    min-width: 200px;  /* 设置最小宽度 */
+}
+
+.button {
+    white-space: nowrap;  /* 防止按钮文字换行 */
+}
+
+.button {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.3s ease;
+}
+
+.button.primary {
+    background-color: #6c5ce7;
+    color: white;
+}
+
+.button.secondary {
+    background-color: #636e72;
+    color: white;
+}
+
+.button:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+}
+
+.search-results-info {
+    margin: 1.5rem 0;
+    padding: 16px 20px;
+    background: linear-gradient(135deg, #6c5ce7, #a29bfe);
+    color: white;
+    border-radius: 8px;
+    text-align: center;
+    font-size: 1.1em;
+    font-weight: 600;
+    box-shadow: 0 4px 12px rgba(108, 92, 231, 0.3);
+    border-left: 4px solid #ffd32a;
+    position: relative;
+    overflow: hidden;
+}
+/* 
+.search-results-info::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, #ffd32a, #a29bfe);
+}
+
+.search-results-info strong {
+    color: #ffd32a;
+    background: rgba(255, 255, 255, 0.2);
+    padding: 4px 10px;
+    border-radius: 6px;
+    margin: 0 6px;
+    font-weight: 700;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+} */
+
+.hidden {
+    display: none !important;
+}
+</style>
 {% endblock %}
