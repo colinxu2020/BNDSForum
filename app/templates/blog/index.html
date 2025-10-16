@@ -306,10 +306,12 @@ displayAllPosts() {
         // 高亮处理函数
         const highlightText = (text) => {
             if (!text || !keyword) return this.escapeHtml(text);
-            
+
             const regex = new RegExp(`(${this.escapeRegex(keyword)})`, 'gi');
             return this.escapeHtml(text).replace(regex, '<mark class="search-highlight">$1</mark>');
         };
+        const favoriteCount = typeof post.favorite_count === 'number' ? post.favorite_count : 0;
+        const favoriteSuffix = post.is_favorited ? ' · 已收藏' : '';
         
         // 生成标签HTML
         const tagsHTML = post.tags && post.tags.length > 0 ? 
@@ -339,6 +341,9 @@ displayAllPosts() {
                 </div>
                 <div class="post-footer">
                     <a class="link-more" href="/post/${post.id}">阅读全文</a>
+                    <div class="post-shortcuts">
+                        <span class="favorite-count">收藏：${favoriteCount}${favoriteSuffix}</span>
+                    </div>
                 </div>
             </article>
         `;

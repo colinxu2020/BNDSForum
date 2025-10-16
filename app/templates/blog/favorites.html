@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% import "_macros/assets.html" as assets with context %}
+{% block title %}我的收藏 - BNDS Blog{% endblock %}
+{% block extra_head %}
+    {{ super() }}
+    {{ assets.markdown_view_styles() }}
+{% endblock %}
+{% block extra_scripts %}
+    {{ super() }}
+    {{ assets.markdown_view_scripts() }}
+{% endblock %}
+{% block content %}
+<section class="card">
+    <header class="form-header">
+        <h1>我的收藏</h1>
+        <p class="form-tip">共 {{ posts | length }} 篇文章。</p>
+    </header>
+    {% if posts %}
+        <div class="post-list">
+            {% for post in posts %}
+                <article class="post-card card">
+                    <header>
+                        <h2><a href="{{ url_for('blog.detail', post_id=post['id']) }}">{{ post['title'] }}</a></h2>
+                        <div class="post-meta">
+                            <span>收藏于：{{ post['favorited_at'] }}</span>
+                            <span>作者：
+                                <a href="{{ url_for('blog.user_profile', username=post['author_username']) }}">
+                                    {{ post['author_display'] }}
+                                </a>
+                            </span>
+                            <span>总收藏：{{ post['favorite_count'] }}</span>
+                        </div>
+                    </header>
+                    {% if post['tags'] %}
+                        <div class="post-tags">
+                            {% for tag in post['tags'] %}
+                                <span class="tag-badge">{{ tag }}</span>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                    <div class="post-excerpt markdown-body clamp-3">
+                        {{ post['content'] | markdown }}
+                    </div>
+                    <div class="post-footer">
+                        <a class="link-more" href="{{ url_for('blog.detail', post_id=post['id']) }}">阅读全文</a>
+                        <div class="post-shortcuts">
+                            <form class="favorite-inline-form" method="post" action="{{ url_for('blog.favorite', post_id=post['id']) }}">
+                                <input type="hidden" name="next" value="{{ request.path }}">
+                                <input type="hidden" name="action" value="remove">
+                                <button type="submit" class="button secondary small">取消收藏</button>
+                            </form>
+                        </div>
+                    </div>
+                </article>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p class="empty-state">你还没有收藏任何文章，浏览喜欢的内容时可以点击“收藏”按钮。</p>
+    {% endif %}
+</section>
+{% endblock %}

@@ -36,6 +36,22 @@
             {% endfor %}
         </div>
         {% endif %}
+        <div class="post-favorite">
+            <span class="favorite-count-label">收藏：{{ post['favorite_count'] }}</span>
+            {% if current_user.is_authenticated %}
+                <form class="favorite-toggle-form" method="post" action="{{ url_for('blog.favorite', post_id=post['id']) }}">
+                    <input type="hidden" name="next" value="{{ request.path }}">
+                    <input type="hidden" name="action" value="{{ 'remove' if post['is_favorited'] else 'add' }}">
+                    <button type="submit" class="button secondary">
+                        {% if post['is_favorited'] %}取消收藏{% else %}收藏此文章{% endif %}
+                    </button>
+                </form>
+            {% else %}
+                <span class="favorite-login-tip">
+                    <a href="{{ url_for('auth.login', next=request.path) }}">登录</a>后可收藏此文章
+                </span>
+            {% endif %}
+        </div>
     </header>
     <section class="post-body markdown-body">
         {{ post['content'] | markdown }}
