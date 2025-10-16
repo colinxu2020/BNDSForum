@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import json
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
-from flask import Blueprint, current_app, flash, redirect, render_template, request, url_for
+from datetime import datetime, timezone
+from io import BytesIO
+import zipfile
+
+from flask import Blueprint, current_app, flash, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
 
 from .datastore import DataStore
@@ -87,6 +91,98 @@ def _build_tree_rows(tag_tree: Dict) -> List[Dict[str, str]]:
     return rows
 
 
+_INVALID_SEGMENT_CHARS = set('<>:"/\\|?*')
+
+
+def _safe_segment(value: str, fallback: str) -> str:
+    text = (value or "").strip()
+    if not text:
+        text = fallback
+    cleaned_chars = []
+    for char in text:
+        if char in _INVALID_SEGMENT_CHARS or ord(char) < 32:
+            cleaned_chars.append("_")
+        else:
+            cleaned_chars.append(char)
+    sanitized = "".join(cleaned_chars).strip().replace(" ", "_")
+    sanitized = sanitized.strip("._")
+    if not sanitized:
+        return fallback
+    return sanitized
+
+
+def _author_folder_name(username: str, user: Dict[str, object], seen: Dict[str, int]) -> str:
+    fallback = f"user_{username}"
+    username_safe = _safe_segment(username, fallback)
+    real_name = str(user.get("real_name", "") or "").strip()
+    if real_name:
+        base = _safe_segment(real_name, fallback)
+        if base != username_safe:
+            base = f"{base}_{username_safe}"
+        else:
+            base = username_safe
+    else:
+        base = username_safe
+    count = seen.get(base, 0) + 1
+    seen[base] = count
+    if count == 1:
+        return base
+    return f"{base}_{count}"
+
+
+def _format_yaml_scalar(value: object) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    text = str(value)
+    if "\n" in text or ":" in text:
+        escaped = text.replace("\\", "\\\\").replace('"', '\\"')
+        return f'"{escaped}"'
+    escaped = text.replace("\\", "\\\\").replace('"', '\\"')
+    if escaped == "":
+        return '""'
+    return f'"{escaped}"'
+
+
+def _dump_front_matter(entries: List[Tuple[str, object]]) -> str:
+    lines: List[str] = []
+    for key, value in entries:
+        if isinstance(value, list):
+            if not value:
+                lines.append(f"{key}: []")
+                continue
+            lines.append(f"{key}:")
+            for item in value:
+                lines.append(f"  - {_format_yaml_scalar(item)}")
+        else:
+            lines.append(f"{key}: {_format_yaml_scalar(value)}")
+    return "\n".join(lines)
+
+
+def _post_filename(
+    base: str,
+    author_folder: str,
+    created_at: str,
+    counter: Dict[Tuple[str, str], int],
+    fallback: str,
+) -> str:
+    date_prefix = (created_at or "").split("T", 1)[0] or "unknown-date"
+    date_safe = _safe_segment(date_prefix, "unknown-date")
+    base_safe = _safe_segment(base, fallback)
+    if not base_safe:
+        base_safe = fallback
+    stem = f"{date_safe}_{base_safe}"
+    key = (author_folder, stem.lower())
+    index = counter.get(key, 0) + 1
+    counter[key] = index
+    if index == 1:
+        return f"{stem}.md"
+    return f"{stem}-{index}.md"
+
+
 @bp.route("/")
 @login_required
 def dashboard():
@@ -107,6 +203,65 @@ def dashboard():
         parent_choices=parent_choices,
         tree_rows=tree_rows,
     )
+
+
+@bp.route("/export/posts")
+@login_required
+def export_posts():
+    if not current_user.is_admin:
+        return redirect(url_for("blog.index"))
+    datastore = get_datastore()
+    posts = datastore.list_posts()
+    users = {user["username"]: user for user in datastore.list_users()}
+    author_buckets: Dict[str, List[Dict[str, object]]] = {}
+    for post in posts:
+        author = post.get("author") or "unknown"
+        author_buckets.setdefault(author, []).append(post)
+    folder_seen: Dict[str, int] = {}
+    filename_counters: Dict[Tuple[str, str], int] = {}
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    buffer = BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        for author in sorted(author_buckets.keys()):
+            post_list = author_buckets[author]
+            post_list.sort(key=lambda item: ((item.get("created_at") or ""), item.get("id") or ""))
+            user = users.get(author, {})
+            folder_name = _author_folder_name(author, user, folder_seen)
+            constant_tags = list(user.get("constant_tags", []) or [])
+            real_name = str(user.get("real_name", "") or "")
+            for post in post_list:
+                title = post.get("title") or "untitled"
+                filename = _post_filename(
+                    title,
+                    folder_name,
+                    post.get("created_at") or "",
+                    filename_counters,
+                    f"post_{(post.get('id') or '')[:8] or 'unknown'}",
+                )
+                tags = sorted(post.get("tags", []) or [])
+                front_matter_entries: List[Tuple[str, object]] = [
+                    ("post_id", post.get("id") or ""),
+                    ("title", title),
+                    ("author", author),
+                ]
+                if real_name:
+                    front_matter_entries.append(("author_real_name", real_name))
+                front_matter_entries.extend(
+                    [
+                        ("created_at", post.get("created_at") or ""),
+                        ("updated_at", post.get("updated_at") or ""),
+                        ("tags", tags),
+                    ]
+                )
+                if constant_tags:
+                    front_matter_entries.append(("author_constant_tags", constant_tags))
+                front_matter = _dump_front_matter(front_matter_entries)
+                content_body = post.get("content") or ""
+                combined = f"---\n{front_matter}\n---\n\n{content_body.rstrip()}\n"
+                archive.writestr(f"{folder_name}/{filename}", combined.encode("utf-8"))
+    buffer.seek(0)
+    download_name = f"blog-export-{timestamp}.zip"
+    return send_file(buffer, mimetype="application/zip", as_attachment=True, download_name=download_name)
 
 
 @bp.route("/users")
