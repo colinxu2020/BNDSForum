@@ -70,7 +70,23 @@
                     <div class="post-excerpt markdown-body clamp-3">
                         {{ post['content'] | markdown }}
                     </div>
-                    <a class="link-more" href="{{ url_for('blog.detail', post_id=post['id']) }}">阅读全文</a>
+                    <div class="post-footer">
+                        <a class="link-more" href="{{ url_for('blog.detail', post_id=post['id']) }}">阅读全文</a>
+                        <div class="post-shortcuts">
+                            <span class="favorite-count">
+                                收藏：{{ post['favorite_count'] }}{% if post['is_favorited'] %}（已收藏）{% endif %}
+                            </span>
+                            {% if current_user.is_authenticated %}
+                                <form class="favorite-inline-form" method="post" action="{{ url_for('blog.favorite', post_id=post['id']) }}">
+                                    <input type="hidden" name="next" value="{{ request.path }}">
+                                    <input type="hidden" name="action" value="{{ 'remove' if post['is_favorited'] else 'add' }}">
+                                    <button type="submit" class="button secondary small">
+                                        {% if post['is_favorited'] %}取消收藏{% else %}收藏{% endif %}
+                                    </button>
+                                </form>
+                            {% endif %}
+                        </div>
+                    </div>
                 </article>
             {% endfor %}
         </div>
@@ -78,4 +94,48 @@
         <p class="empty-state">该用户还没有发布文章。</p>
     {% endif %}
 </section>
+
+{% if viewing_self %}
+<section class="card">
+    <h2>我的收藏</h2>
+    {% if favorite_posts %}
+        <div class="post-list">
+            {% for post in favorite_posts %}
+                <article class="post-card card">
+                    <header>
+                        <h3><a href="{{ url_for('blog.detail', post_id=post['id']) }}">{{ post['title'] }}</a></h3>
+                        <div class="post-meta">
+                            <span>收藏于：{{ post['favorited_at'] }}</span>
+                            <span>作者：{{ post['author_display'] }}</span>
+                        </div>
+                    </header>
+                    {% if post['tags'] %}
+                        <div class="post-tags">
+                            {% for tag in post['tags'] %}
+                                <span class="tag-badge">{{ tag }}</span>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                    <div class="post-excerpt markdown-body clamp-3">
+                        {{ post['content'] | markdown }}
+                    </div>
+                    <div class="post-footer">
+                        <a class="link-more" href="{{ url_for('blog.detail', post_id=post['id']) }}">阅读全文</a>
+                        <div class="post-shortcuts">
+                            <span class="favorite-count">总收藏：{{ post['favorite_count'] }}</span>
+                            <form class="favorite-inline-form" method="post" action="{{ url_for('blog.favorite', post_id=post['id']) }}">
+                                <input type="hidden" name="next" value="{{ request.path }}">
+                                <input type="hidden" name="action" value="remove">
+                                <button type="submit" class="button secondary small">取消收藏</button>
+                            </form>
+                        </div>
+                    </div>
+                </article>
+            {% endfor %}
+        </div>
+    {% else %}
+        <p class="empty-state">你还没有收藏任何文章，浏览喜欢的文章时可以点击“收藏”按钮。</p>
+    {% endif %}
+</section>
+{% endif %}
 {% endblock %}

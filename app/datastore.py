@@ -168,6 +168,18 @@ class DataStore:
                     name TEXT PRIMARY KEY
                 );
 
+                CREATE TABLE IF NOT EXISTS post_favorites (
+                    post_id TEXT NOT NULL,
+                    username TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (post_id, username),
+                    FOREIGN KEY(post_id) REFERENCES posts(id) ON DELETE CASCADE,
+                    FOREIGN KEY(username) REFERENCES users(username) ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_post_favorites_user ON post_favorites(username);
+                CREATE INDEX IF NOT EXISTS idx_post_favorites_post ON post_favorites(post_id);
+
                 CREATE TABLE IF NOT EXISTS constant_tags (
                     name TEXT PRIMARY KEY
                 );
@@ -751,6 +763,87 @@ class DataStore:
             if deleted.rowcount == 0:
                 raise ValueError("未找到文章")
 
+    def favorite_post(self, post_id: str, username: str) -> bool:
+        conn = self._conn()
+        timestamp = utcnow_str()
+        with conn:
+            exists = conn.execute("SELECT 1 FROM posts WHERE id = ?", (post_id,)).fetchone()
+            if not exists:
+                raise ValueError("未找到文章")
+            user_exists = conn.execute("SELECT 1 FROM users WHERE username = ?", (username,)).fetchone()
+            if not user_exists:
+                raise ValueError("未找到用户")
+            result = conn.execute(
+                "INSERT OR IGNORE INTO post_favorites (post_id, username, created_at) VALUES (?, ?, ?)",
+                (post_id, username, timestamp),
+            )
+        return result.rowcount > 0
+
+    def unfavorite_post(self, post_id: str, username: str) -> bool:
+        conn = self._conn()
+        with conn:
+            result = conn.execute(
+                "DELETE FROM post_favorites WHERE post_id = ? AND username = ?",
+                (post_id, username),
+            )
+        return result.rowcount > 0
+
+    def is_post_favorited(self, post_id: str, username: str) -> bool:
+        conn = self._conn()
+        row = conn.execute(
+            "SELECT 1 FROM post_favorites WHERE post_id = ? AND username = ?",
+            (post_id, username),
+        ).fetchone()
+        return row is not None
+
+    def favorite_post_ids(self, username: str, post_ids: Optional[Iterable[str]] = None) -> Set[str]:
+        conn = self._conn()
+        if post_ids is None:
+            rows = conn.execute(
+                "SELECT post_id FROM post_favorites WHERE username = ?",
+                (username,),
+            ).fetchall()
+        else:
+            ids = [pid for pid in post_ids]
+            if not ids:
+                return set()
+            placeholders = ",".join(["?"] * len(ids))
+            rows = conn.execute(
+                f"""
+                SELECT post_id
+                FROM post_favorites
+                WHERE username = ? AND post_id IN ({placeholders})
+                """,
+                (username, *ids),
+            ).fetchall()
+        return {row["post_id"] for row in rows}
+
+    def list_favorite_posts(self, username: str) -> List[Dict[str, Any]]:
+        conn = self._conn()
+        rows = conn.execute(
+            """
+            SELECT p.id, p.author, p.title, p.content, p.created_at, p.updated_at, pf.created_at AS favorited_at
+            FROM post_favorites AS pf
+            JOIN posts AS p ON pf.post_id = p.id
+            WHERE pf.username = ?
+            ORDER BY pf.created_at DESC
+            """,
+            (username,),
+        ).fetchall()
+        favorited_at_map = {row["id"]: row["favorited_at"] for row in rows}
+        posts = self._build_posts_from_rows(rows)
+        for post in posts:
+            post["favorited_at"] = favorited_at_map.get(post["id"])
+        return posts
+
+    def favorite_count(self, post_id: str) -> int:
+        conn = self._conn()
+        row = conn.execute(
+            "SELECT COUNT(*) AS count FROM post_favorites WHERE post_id = ?",
+            (post_id,),
+        ).fetchone()
+        return int(row["count"] if row else 0)
+
     def add_comment(self, post_id: str, author: str, content: str) -> Dict[str, Any]:
         conn = self._conn()
         comment_id = uuid.uuid4().hex
@@ -970,6 +1063,7 @@ class DataStore:
         post_ids = [row["id"] for row in rows]
         tags_map = self._load_tags_for_posts(conn, post_ids)
         comments_map = self._load_comments_for_posts(conn, post_ids)
+        favorite_counts = self._load_favorite_counts(conn, post_ids)
         posts: List[Dict[str, Any]] = []
         for row in rows:
             post_id = row["id"]
@@ -983,6 +1077,7 @@ class DataStore:
                     "created_at": row["created_at"],
                     "updated_at": row["updated_at"],
                     "comments": comments_map.get(post_id, []),
+                    "favorite_count": favorite_counts.get(post_id, 0),
                 }
             )
         return posts
@@ -1026,6 +1121,21 @@ class DataStore:
                 }
             )
         return result
+
+    def _load_favorite_counts(self, conn: sqlite3.Connection, post_ids: Sequence[str]) -> Dict[str, int]:
+        if not post_ids:
+            return {}
+        placeholders = ",".join(["?"] * len(post_ids))
+        rows = conn.execute(
+            f"""
+            SELECT post_id, COUNT(*) AS count
+            FROM post_favorites
+            WHERE post_id IN ({placeholders})
+            GROUP BY post_id
+            """,
+            post_ids,
+        ).fetchall()
+        return {row["post_id"]: int(row["count"]) for row in rows}
 
     @staticmethod
     def _normalize_tags(tags: Optional[Iterable[str]]) -> List[str]:

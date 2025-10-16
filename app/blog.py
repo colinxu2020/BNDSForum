@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import re
-from typing import Dict, Tuple
+from typing import Dict, Optional, Set, Tuple
 
 from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
@@ -143,13 +143,22 @@ def _user_lookup(datastore: DataStore) -> dict[str, dict[str, object]]:
     return {user["username"]: user for user in users}
 
 
-def _decorate_post(post: dict, user_map: dict[str, dict[str, object]]) -> dict:
+def _decorate_post(
+    post: dict,
+    user_map: dict[str, dict[str, object]],
+    favorite_post_ids: Optional[Set[str]] = None,
+) -> dict:
     record = user_map.get(post.get("author"), {})
     decorated = {**post}
     decorated["author_username"] = post.get("author")
     decorated["author_real_name"] = record.get("real_name", "") if record else ""
     decorated["author_display"] = decorated["author_real_name"] or decorated["author_username"]
     decorated["author_constant_tags"] = record.get("constant_tags", []) if record else []
+    decorated["favorite_count"] = post.get("favorite_count", 0)
+    if favorite_post_ids is not None:
+        decorated["is_favorited"] = post.get("id") in favorite_post_ids
+    else:
+        decorated["is_favorited"] = False
     return decorated
 
 
@@ -165,7 +174,14 @@ def _decorate_comment(comment: dict, user_map: dict[str, dict[str, object]]) -> 
 def index():
     datastore = get_datastore()
     user_map = _user_lookup(datastore)
-    posts = [_decorate_post(post, user_map) for post in datastore.list_posts()]
+    raw_posts = datastore.list_posts()
+    favorite_post_ids: Set[str] = set()
+    if current_user.is_authenticated:
+        favorite_post_ids = datastore.favorite_post_ids(
+            current_user.username,
+            [post["id"] for post in raw_posts],
+        )
+    posts = [_decorate_post(post, user_map, favorite_post_ids) for post in raw_posts]
     normal_tags = datastore.list_normal_tags()
     return render_template(
         "blog/index.html",
@@ -239,13 +255,56 @@ def detail(post_id: str):
             flash("评论已发布", "success")
             return redirect(url_for("blog.detail", post_id=post_id))
     user_map = _user_lookup(datastore)
-    decorated_post = _decorate_post(post, user_map)
+    favorite_post_ids: Set[str] = set()
+    if current_user.is_authenticated:
+        favorite_post_ids = datastore.favorite_post_ids(current_user.username, [post_id])
+    decorated_post = _decorate_post(post, user_map, favorite_post_ids)
     comments = [_decorate_comment(comment, user_map) for comment in post.get("comments", [])]
     return render_template(
         "blog/detail.html",
         post=decorated_post,
         comments=comments,
         can_edit=_can_edit(post),
+    )
+
+
+@bp.route("/post/<post_id>/favorite", methods=["POST"])
+@login_required
+def favorite(post_id: str):
+    datastore = get_datastore()
+    action = (request.form.get("action") or "add").strip().lower()
+    next_url = request.form.get("next") or request.referrer or url_for("blog.detail", post_id=post_id)
+    try:
+        if action == "remove":
+            removed = datastore.unfavorite_post(post_id, current_user.username)
+            flash("已取消收藏" if removed else "该文章不在收藏夹中", "success" if removed else "info")
+        elif action == "toggle":
+            if datastore.is_post_favorited(post_id, current_user.username):
+                datastore.unfavorite_post(post_id, current_user.username)
+                flash("已取消收藏", "success")
+            else:
+                datastore.favorite_post(post_id, current_user.username)
+                flash("收藏成功", "success")
+        else:
+            added = datastore.favorite_post(post_id, current_user.username)
+            flash("收藏成功" if added else "文章已在收藏夹中", "success" if added else "info")
+    except ValueError:
+        flash("未找到文章，无法进行收藏操作", "error")
+        return redirect(url_for("blog.index"))
+    return redirect(next_url)
+
+
+@bp.route("/favorites")
+@login_required
+def favorites():
+    datastore = get_datastore()
+    user_map = _user_lookup(datastore)
+    raw_posts = datastore.list_favorite_posts(current_user.username)
+    favorite_post_ids = {post["id"] for post in raw_posts}
+    posts = [_decorate_post(post, user_map, favorite_post_ids) for post in raw_posts]
+    return render_template(
+        "blog/favorites.html",
+        posts=posts,
     )
 
 
@@ -358,12 +417,25 @@ def user_profile(username: str):
             return redirect(url_for("blog.user_profile", username=username))
 
     user_map = _user_lookup(datastore)
-    user_posts = [
-        _decorate_post(post, user_map) for post in datastore.list_posts() if post.get("author") == username
-    ]
+    raw_posts = [post for post in datastore.list_posts() if post.get("author") == username]
+    viewer_favorite_ids: Set[str] = set()
+    if current_user.is_authenticated:
+        viewer_favorite_ids = datastore.favorite_post_ids(
+            current_user.username,
+            [post["id"] for post in raw_posts],
+        )
+    user_posts = [_decorate_post(post, user_map, viewer_favorite_ids) for post in raw_posts]
+    viewing_self = current_user.is_authenticated and current_user.username == username
+    favorite_posts = []
+    if viewing_self:
+        favorites_raw = datastore.list_favorite_posts(username)
+        owned_favorite_ids = {post["id"] for post in favorites_raw}
+        favorite_posts = [_decorate_post(post, user_map, owned_favorite_ids) for post in favorites_raw]
     return render_template(
         "blog/user_profile.html",
         profile=user_record,
         posts=user_posts,
         can_edit_real_name=can_edit_real_name,
+        viewing_self=viewing_self,
+        favorite_posts=favorite_posts if viewing_self else None,
     )

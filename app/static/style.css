@@ -320,12 +320,60 @@ main {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.post-shortcuts {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
 }
 
 .post-shortcuts a {
     color: var(--text-subtle);
     font-size: 0.85rem;
     text-decoration: none;
+}
+
+.post-shortcuts span {
+    color: var(--text-subtle);
+    font-size: 0.85rem;
+}
+
+.post-shortcuts form {
+    margin: 0;
+}
+
+.favorite-inline-form {
+    display: inline-flex;
+    align-items: center;
+}
+
+.favorite-toggle-form {
+    display: inline-flex;
+    align-items: center;
+    margin: 0;
+}
+
+.post-favorite {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 1rem;
+    flex-wrap: wrap;
+}
+
+.favorite-count-label,
+.favorite-count {
+    color: var(--text-subtle);
+    font-size: 0.9rem;
+}
+
+.favorite-login-tip {
+    color: var(--text-subtle);
+    font-size: 0.9rem;
 }
 
 .post-shortcuts a:hover {
