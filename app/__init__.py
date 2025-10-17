@@ -26,11 +26,13 @@ def create_app() -> Flask:
     from .blog import bp as blog_bp
     from .admin import bp as admin_bp
     from .tag import bp as tag_bp
+    from .messages import bp as messages_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(blog_bp)
     app.register_blueprint(admin_bp, url_prefix="/admin")
     app.register_blueprint(tag_bp, url_prefix="/tags")
+    app.register_blueprint(messages_bp)
 
     @app.before_request
     def enforce_banned_guard():
@@ -46,9 +48,13 @@ def create_app() -> Flask:
 
     @app.context_processor
     def inject_globals():
+        unread_messages = 0
+        if current_user.is_authenticated:
+            unread_messages = datastore.count_unread_messages(current_user.username, notify_only=True)
         return {
             "is_admin": getattr(current_user, "is_admin", False),
             "current_year": datetime.now().year,
+            "unread_message_count": unread_messages,
         }
 
     return app

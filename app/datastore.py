@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import RLock, local
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Set
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Literal, cast
 
 from flask_login import UserMixin
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -26,6 +26,11 @@ ISO_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
 
 def utcnow_str() -> str:
     return datetime.now(timezone.utc).strftime(ISO_FORMAT)
+
+
+MessagePreference = Literal["notify", "silent", "block"]
+MESSAGE_PREFERENCE_DEFAULT: MessagePreference = "notify"
+MESSAGE_PREFERENCES: Set[MessagePreference] = {"notify", "silent", "block"}
 
 
 class SQLiteConnectionManager:
@@ -102,6 +107,10 @@ class DataStore:
 
     def _conn(self) -> sqlite3.Connection:
         return self._connection_manager.get_connection()
+
+    @staticmethod
+    def _escape_like(term: str) -> str:
+        return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
     def _setup_database(self) -> None:
         if self._setup_complete:
@@ -198,6 +207,33 @@ class DataStore:
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_tag_nodes_parent ON tag_nodes(parent_id);
+
+                CREATE TABLE IF NOT EXISTS private_messages (
+                    id TEXT PRIMARY KEY,
+                    sender TEXT NOT NULL,
+                    recipient TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    is_read INTEGER NOT NULL DEFAULT 0,
+                    is_system INTEGER NOT NULL DEFAULT 0,
+                    FOREIGN KEY(sender) REFERENCES users(username) ON DELETE CASCADE,
+                    FOREIGN KEY(recipient) REFERENCES users(username) ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_private_messages_recipient_created
+                    ON private_messages(recipient, created_at DESC);
+                CREATE INDEX IF NOT EXISTS idx_private_messages_sender_created
+                    ON private_messages(sender, created_at DESC);
+
+                CREATE TABLE IF NOT EXISTS message_preferences (
+                    owner TEXT NOT NULL,
+                    other_user TEXT NOT NULL,
+                    preference TEXT NOT NULL CHECK (preference IN ('notify','silent','block')),
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (owner, other_user),
+                    FOREIGN KEY(owner) REFERENCES users(username) ON DELETE CASCADE,
+                    FOREIGN KEY(other_user) REFERENCES users(username) ON DELETE CASCADE
+                );
                 """
             )
             columns = {
@@ -494,6 +530,34 @@ class DataStore:
                 }
             )
         return users
+
+    def search_users(self, keyword: str, limit: int = 20) -> List[Dict[str, Any]]:
+        term = keyword.strip()
+        if not term:
+            return []
+        conn = self._conn()
+        escaped = self._escape_like(term)
+        pattern = f"%{escaped}%"
+        capped_limit = max(1, min(limit, 50))
+        rows = conn.execute(
+            """
+            SELECT username, real_name
+            FROM users
+            WHERE username LIKE ? ESCAPE '\\'
+            ORDER BY username
+            LIMIT ?
+            """,
+            (pattern, capped_limit),
+        ).fetchall()
+        results: List[Dict[str, Any]] = []
+        for row in rows:
+            results.append(
+                {
+                    "username": row["username"],
+                    "real_name": row["real_name"],
+                }
+            )
+        return results
 
     def get_user(self, username: str) -> Optional[Dict[str, Any]]:
         conn = self._conn()
@@ -902,6 +966,242 @@ class DataStore:
             )
             if result.rowcount == 0:
                 raise ValueError("未找到评论")
+
+    # Private messaging -------------------------------------------------
+
+    def _message_row_to_dict(self, row: sqlite3.Row) -> Dict[str, Any]:
+        return {
+            "id": row["id"],
+            "sender": row["sender"],
+            "recipient": row["recipient"],
+            "content": row["content"],
+            "created_at": row["created_at"],
+            "is_read": bool(row["is_read"]),
+            "is_system": bool(row["is_system"]),
+        }
+
+    def get_message_preference(self, owner: str, other_user: str) -> MessagePreference:
+        if owner == other_user:
+            return MESSAGE_PREFERENCE_DEFAULT
+        conn = self._conn()
+        row = conn.execute(
+            "SELECT preference FROM message_preferences WHERE owner = ? AND other_user = ?",
+            (owner, other_user),
+        ).fetchone()
+        if not row:
+            return MESSAGE_PREFERENCE_DEFAULT
+        value = row["preference"]
+        if value in MESSAGE_PREFERENCES:
+            return cast(MessagePreference, value)
+        return MESSAGE_PREFERENCE_DEFAULT
+
+    def set_message_preference(self, owner: str, other_user: str, preference: MessagePreference) -> None:
+        if owner == other_user:
+            raise ValueError("不能对自己设置私信偏好")
+        if preference not in MESSAGE_PREFERENCES:
+            raise ValueError("不支持的私信偏好设置")
+        if not self.get_user(other_user):
+            raise ValueError("未找到目标用户")
+        conn = self._conn()
+        timestamp = utcnow_str()
+        with conn:
+            if preference == MESSAGE_PREFERENCE_DEFAULT:
+                conn.execute(
+                    "DELETE FROM message_preferences WHERE owner = ? AND other_user = ?",
+                    (owner, other_user),
+                )
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO message_preferences (owner, other_user, preference, updated_at)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(owner, other_user) DO UPDATE
+                        SET preference = excluded.preference, updated_at = excluded.updated_at
+                    """,
+                    (owner, other_user, preference, timestamp),
+                )
+
+    def send_private_message(
+        self,
+        sender: str,
+        recipient: str,
+        content: str,
+        *,
+        is_system: bool = False,
+    ) -> Dict[str, Any]:
+        prepared = content.strip()
+        if not prepared:
+            raise ValueError("消息内容不能为空")
+        if sender == recipient:
+            raise ValueError("不能向自己发送私信")
+        if not is_system and not self.get_user(sender):
+            raise ValueError("未找到发送者")
+        if not self.get_user(recipient):
+            raise ValueError("未找到收件人")
+        preference = self.get_message_preference(recipient, sender)
+        if preference == "block":
+            raise PermissionError("对方已设置拉黑，无法发送私信")
+        message_id = uuid.uuid4().hex
+        timestamp = utcnow_str()
+        conn = self._conn()
+        with conn:
+            conn.execute(
+                """
+                INSERT INTO private_messages (
+                    id, sender, recipient, content, created_at, is_read, is_system
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    message_id,
+                    sender,
+                    recipient,
+                    prepared,
+                    timestamp,
+                    0,
+                    1 if is_system else 0,
+                ),
+            )
+        return {
+            "id": message_id,
+            "sender": sender,
+            "recipient": recipient,
+            "content": prepared,
+            "created_at": timestamp,
+            "is_read": False,
+            "is_system": is_system,
+        }
+
+    def list_conversations(self, username: str) -> List[Dict[str, Any]]:
+        conn = self._conn()
+        rows = conn.execute(
+            """
+            WITH base AS (
+                SELECT
+                    id,
+                    sender,
+                    recipient,
+                    content,
+                    created_at,
+                    is_read,
+                    is_system,
+                    CASE WHEN sender = :username THEN recipient ELSE sender END AS other_user
+                FROM private_messages
+                WHERE sender = :username OR recipient = :username
+            ),
+            ranked AS (
+                SELECT
+                    id,
+                    sender,
+                    recipient,
+                    content,
+                    created_at,
+                    is_read,
+                    is_system,
+                    other_user,
+                    ROW_NUMBER() OVER (PARTITION BY other_user ORDER BY created_at DESC) AS rn
+                FROM base
+            ),
+            unread_counts AS (
+                SELECT
+                    other_user,
+                    COUNT(*) AS unread_count
+                FROM base
+                WHERE recipient = :username AND is_read = 0
+                GROUP BY other_user
+            )
+            SELECT
+                r.other_user,
+                r.id,
+                r.sender,
+                r.recipient,
+                r.content,
+                r.created_at,
+                r.is_system,
+                COALESCE(u.unread_count, 0) AS unread_count,
+                COALESCE(pref.preference, :default_pref) AS preference
+            FROM ranked AS r
+            LEFT JOIN unread_counts AS u ON u.other_user = r.other_user
+            LEFT JOIN message_preferences AS pref
+                ON pref.owner = :username AND pref.other_user = r.other_user
+            WHERE r.rn = 1
+            ORDER BY r.created_at DESC
+            """,
+            {
+                "username": username,
+                "default_pref": MESSAGE_PREFERENCE_DEFAULT,
+            },
+        ).fetchall()
+        conversations: List[Dict[str, Any]] = []
+        for row in rows:
+            conversations.append(
+                {
+                    "user": row["other_user"],
+                    "last_message": {
+                        "id": row["id"],
+                        "sender": row["sender"],
+                        "recipient": row["recipient"],
+                        "content": row["content"],
+                        "created_at": row["created_at"],
+                        "is_system": bool(row["is_system"]),
+                    },
+                    "unread_count": int(row["unread_count"]),
+                    "preference": row["preference"],
+                }
+            )
+        return conversations
+
+    def get_conversation_messages(
+        self,
+        username: str,
+        other_user: str,
+        limit: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        params: List[Any] = [username, other_user, other_user, username]
+        query = """
+            SELECT id, sender, recipient, content, created_at, is_read, is_system
+            FROM private_messages
+            WHERE (sender = ? AND recipient = ?) OR (sender = ? AND recipient = ?)
+            ORDER BY created_at ASC
+        """
+        if limit is not None:
+            query += " LIMIT ?"
+            params.append(limit)
+        conn = self._conn()
+        rows = conn.execute(query, params).fetchall()
+        return [self._message_row_to_dict(row) for row in rows]
+
+    def mark_conversation_read(self, username: str, other_user: str) -> None:
+        conn = self._conn()
+        with conn:
+            conn.execute(
+                """
+                UPDATE private_messages
+                SET is_read = 1
+                WHERE sender = ? AND recipient = ? AND is_read = 0
+                """,
+                (other_user, username),
+            )
+
+    def count_unread_messages(self, username: str, notify_only: bool = True) -> int:
+        conn = self._conn()
+        row = conn.execute(
+            """
+            SELECT COUNT(*) AS count
+            FROM private_messages AS pm
+            LEFT JOIN message_preferences AS pref
+                ON pref.owner = ? AND pref.other_user = pm.sender
+            WHERE pm.recipient = ?
+              AND pm.is_read = 0
+              AND (? = 0 OR COALESCE(pref.preference, ?) = 'notify')
+            """,
+            (
+                username,
+                username,
+                1 if notify_only else 0,
+                MESSAGE_PREFERENCE_DEFAULT,
+            ),
+        ).fetchone()
+        return int(row["count"] if row else 0)
 
     # Normal tags ------------------------------------------------------
 

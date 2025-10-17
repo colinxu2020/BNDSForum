@@ -34,6 +34,8 @@ _CALLOUT_DEFAULT_TITLES = {
 }
 _CALLOUT_INFO_RE = re.compile(r"^([\w-]+)(?:\[([^\]]*)\])?(?:\{([^}]*)\})?")
 
+_MENTION_RE = re.compile(r"@([A-Za-z0-9_]{1,32})")
+
 
 def _parse_callout_info(params: str) -> Tuple[str, str | None, Dict[str, str]] | None:
     stripped = params.strip()
@@ -132,6 +134,54 @@ def render_markdown(value: str | None) -> Markup:
     html = _markdowner.render(protected)
     html = _restore_katex_braces(html)
     return Markup(html)
+
+
+def _extract_mentions(content: str) -> Set[str]:
+    if not content:
+        return set()
+    return {match.group(1) for match in _MENTION_RE.finditer(content)}
+
+
+def _notify_mentions(
+    datastore: DataStore,
+    author_username: str,
+    author_display: str,
+    post_id: str,
+    post: dict,
+    comment: Dict[str, Any],
+    raw_content: str,
+) -> None:
+    mentions = _extract_mentions(raw_content)
+    if not mentions:
+        return
+    post_title = str(post.get("title") or "未命名文章")
+    permalink = url_for("blog.detail", post_id=post_id, _external=True) + f"#comment-{comment['id']}"
+    snippet = raw_content.strip()
+    if len(snippet) > 120:
+        snippet = snippet[:117] + "..."
+    message_template = (
+        "{author} 在《{title}》的评论中 @ 了你：\n"
+        "{snippet}\n"
+        "查看评论：{link}"
+    )
+    for username in mentions:
+        if username == author_username:
+            continue
+        if not datastore.get_user(username):
+            continue
+        try:
+            datastore.send_private_message(
+                author_username,
+                username,
+                message_template.format(
+                    author=author_display,
+                    title=post_title,
+                    snippet=snippet or "(评论内容为空)",
+                    link=permalink,
+                ),
+            )
+        except (PermissionError, ValueError):
+            continue
 
 
 def get_datastore() -> DataStore:
@@ -251,7 +301,9 @@ def detail(post_id: str):
         if not content:
             flash("评论内容不能为空", "error")
         else:
-            datastore.add_comment(post_id, current_user.username, content)
+            comment_record = datastore.add_comment(post_id, current_user.username, content)
+            author_display = getattr(current_user, "real_name", "") or current_user.username
+            _notify_mentions(datastore, current_user.username, author_display, post_id, post, comment_record, content)
             flash("评论已发布", "success")
             return redirect(url_for("blog.detail", post_id=post_id))
     user_map = _user_lookup(datastore)
