@@ -66,6 +66,7 @@ class User(UserMixin):
     role: str = "user"
     constant_tags: List[str] = field(default_factory=list)
     real_name: str = ""
+    is_banned: bool = False
 
     def get_id(self) -> str:  # type: ignore[override]
         return self.username
@@ -74,6 +75,9 @@ class User(UserMixin):
     def is_admin(self) -> bool:
         return self.role == "admin"
 
+    def is_active(self) -> bool:  # type: ignore[override]
+        return not self.is_banned
+
     def to_record(self) -> Dict[str, Any]:
         return {
             "username": self.username,
@@ -81,6 +85,7 @@ class User(UserMixin):
             "role": self.role,
             "constant_tags": self.constant_tags,
             "real_name": self.real_name,
+            "is_banned": self.is_banned,
         }
 
 
@@ -127,7 +132,8 @@ class DataStore:
                     password_hash TEXT NOT NULL,
                     role TEXT NOT NULL,
                     constant_tags TEXT NOT NULL,
-                    real_name TEXT NOT NULL
+                    real_name TEXT NOT NULL,
+                    is_banned INTEGER NOT NULL DEFAULT 0
                 );
 
                 CREATE TABLE IF NOT EXISTS posts (
@@ -194,6 +200,12 @@ class DataStore:
                 CREATE INDEX IF NOT EXISTS idx_tag_nodes_parent ON tag_nodes(parent_id);
                 """
             )
+            columns = {
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(users)")
+            }
+            if "is_banned" not in columns:
+                conn.execute("ALTER TABLE users ADD COLUMN is_banned INTEGER NOT NULL DEFAULT 0")
 
     def _ensure_root_node(self, conn: sqlite3.Connection) -> None:
         with conn:
@@ -467,7 +479,7 @@ class DataStore:
     def list_users(self) -> List[Dict[str, Any]]:
         conn = self._conn()
         rows = conn.execute(
-            "SELECT username, password_hash, role, constant_tags, real_name FROM users"
+            "SELECT username, password_hash, role, constant_tags, real_name, is_banned FROM users"
         ).fetchall()
         users: List[Dict[str, Any]] = []
         for row in rows:
@@ -478,6 +490,7 @@ class DataStore:
                     "role": row["role"],
                     "constant_tags": self._deserialize_tags(row["constant_tags"]),
                     "real_name": row["real_name"],
+                    "is_banned": bool(row["is_banned"]),
                 }
             )
         return users
@@ -485,7 +498,7 @@ class DataStore:
     def get_user(self, username: str) -> Optional[Dict[str, Any]]:
         conn = self._conn()
         row = conn.execute(
-            "SELECT username, password_hash, role, constant_tags, real_name FROM users WHERE username = ?",
+            "SELECT username, password_hash, role, constant_tags, real_name, is_banned FROM users WHERE username = ?",
             (username,),
         ).fetchone()
         if not row:
@@ -496,6 +509,7 @@ class DataStore:
             "role": row["role"],
             "constant_tags": self._deserialize_tags(row["constant_tags"]),
             "real_name": row["real_name"],
+            "is_banned": bool(row["is_banned"]),
         }
 
     def load_user(self, username: str) -> Optional[User]:
@@ -508,6 +522,7 @@ class DataStore:
             role=record.get("role", "user"),
             constant_tags=record.get("constant_tags", []),
             real_name=record.get("real_name", ""),
+            is_banned=bool(record.get("is_banned", False)),
         )
 
     def create_user(
@@ -540,6 +555,7 @@ class DataStore:
             role=role,
             constant_tags=prepared_tags,
             real_name=real_name.strip(),
+            is_banned=False,
         )
 
     def update_user_constant_tags(self, username: str, constant_tags: Iterable[str]) -> None:
@@ -606,6 +622,16 @@ class DataStore:
             if updated.rowcount == 0:
                 raise ValueError("未找到用户")
 
+    def set_user_banned(self, username: str, banned: bool) -> None:
+        conn = self._conn()
+        with conn:
+            updated = conn.execute(
+                "UPDATE users SET is_banned = ? WHERE username = ?",
+                (1 if banned else 0, username),
+            )
+            if updated.rowcount == 0:
+                raise ValueError("未找到用户")
+
     def update_user_real_name(self, username: str, real_name: str) -> None:
         conn = self._conn()
         with conn:
@@ -644,6 +670,7 @@ class DataStore:
             role=record.get("role", "user"),
             constant_tags=record.get("constant_tags", []),
             real_name=record.get("real_name", ""),
+            is_banned=bool(record.get("is_banned", False)),
         )
 
     def _upsert_remote_user(self, remote_user: OJUserInfo, password: str) -> User:
@@ -651,7 +678,7 @@ class DataStore:
         password_hash = generate_password_hash(password)
         with conn:
             existing = conn.execute(
-                "SELECT username, role, constant_tags, real_name FROM users WHERE username = ?",
+                "SELECT username, role, constant_tags, real_name, is_banned FROM users WHERE username = ?",
                 (remote_user.username,),
             ).fetchone()
             if existing:
@@ -661,6 +688,7 @@ class DataStore:
                 )
                 constant_tags = self._deserialize_tags(existing["constant_tags"])
                 role = existing["role"]
+                is_banned = bool(existing["is_banned"])
             else:
                 conn.execute(
                     "INSERT INTO users (username, password_hash, role, constant_tags, real_name) VALUES (?, ?, ?, ?, ?)",
@@ -674,12 +702,14 @@ class DataStore:
                 )
                 constant_tags = []
                 role = "user"
+                is_banned = False
         return User(
             username=remote_user.username,
             password_hash=password_hash,
             role=role,
             constant_tags=constant_tags,
             real_name=remote_user.real_name,
+            is_banned=is_banned,
         )
 
     # Posts ------------------------------------------------------------

@@ -110,6 +110,7 @@
                 <th>真实姓名</th>
                 <th>用户名</th>
                 <th>角色</th>
+                <th>状态</th>
                 <th>固定标签</th>
                 <th>操作</th>
             </tr>
@@ -152,6 +153,13 @@
                             </div>
                         </td>
                         <td>
+                            {% if user['is_banned'] %}
+                                <span class="tag-badge danger">已封禁</span>
+                            {% else %}
+                                <span class="tag-badge">正常</span>
+                            {% endif %}
+                        </td>
+                        <td>
                             {% if user['constant_tags'] %}
                                 <div class="tag-collection compact">
                                     {% for tag in user['constant_tags'] %}
@@ -163,17 +171,30 @@
                             {% endif %}
                         </td>
                         <td>
-                            <form id="{{ form_id }}" method="post" action="{{ url_for('admin.update_user') }}">
-                                <input type="hidden" name="username" value="{{ user['username'] }}">
-                                <input type="hidden" name="return_to" value="{{ request.full_path.rstrip('?') }}">
-                                <button type="submit" class="button primary">保存</button>
-                            </form>
+                            <div class="row-actions">
+                                <form id="{{ form_id }}" method="post" action="{{ url_for('admin.update_user') }}">
+                                    <input type="hidden" name="username" value="{{ user['username'] }}">
+                                    <input type="hidden" name="return_to" value="{{ request.full_path.rstrip('?') }}">
+                                    <button type="submit" class="button primary">保存</button>
+                                </form>
+                                {% if user['is_banned'] %}
+                                    <form method="post" action="{{ url_for('admin.unban_user', username=user['username']) }}">
+                                        <input type="hidden" name="return_to" value="{{ request.full_path.rstrip('?') }}">
+                                        <button type="submit" class="button ghost">解封</button>
+                                    </form>
+                                {% elif user['username'] != current_user.username %}
+                                    <form method="post" action="{{ url_for('admin.ban_user', username=user['username']) }}">
+                                        <input type="hidden" name="return_to" value="{{ request.full_path.rstrip('?') }}">
+                                        <button type="submit" class="button danger ghost">封禁</button>
+                                    </form>
+                                {% endif %}
+                            </div>
                         </td>
                     </tr>
                 {% endfor %}
             {% else %}
                 <tr>
-                    <td colspan="6">暂无符合条件的用户，请调整筛选条件。</td>
+                    <td colspan="7">暂无符合条件的用户，请调整筛选条件。</td>
                 </tr>
             {% endif %}
             </tbody>

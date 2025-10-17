@@ -542,6 +542,79 @@ def update_user():
     return redirect(redirect_target)
 
 
+@bp.route("/users/<username>/ban", methods=["POST"])
+@login_required
+def ban_user(username: str):
+    if not current_user.is_admin:
+        return redirect(url_for("blog.index"))
+    target_username = (username or "").strip()
+    return_to = (request.form.get("return_to") or "").strip()
+    fallback = url_for("admin.user_list")
+    redirect_target = fallback
+    if return_to and return_to.startswith(fallback):
+        redirect_target = return_to
+    if not target_username:
+        flash("未指定用户", "error")
+        return redirect(redirect_target)
+    if target_username == current_user.username:
+        flash("不能封禁当前登录账号", "error")
+        return redirect(redirect_target)
+    datastore = get_datastore()
+    target = datastore.get_user(target_username)
+    if not target:
+        flash("用户不存在", "error")
+        return redirect(redirect_target)
+    if target.get("is_banned"):
+        flash("用户已处于封禁状态", "info")
+        return redirect(redirect_target)
+    if target.get("role") == "admin":
+        users = datastore.list_users()
+        active_admins = [
+            user for user in users if user.get("role") == "admin" and not user.get("is_banned")
+        ]
+        if len(active_admins) <= 1 and any(user["username"] == target_username for user in active_admins):
+            flash("至少保留一位未被封禁的管理员", "error")
+            return redirect(redirect_target)
+    try:
+        datastore.set_user_banned(target_username, True)
+    except ValueError as exc:
+        flash(str(exc), "error")
+    else:
+        flash("用户已封禁", "success")
+    return redirect(redirect_target)
+
+
+@bp.route("/users/<username>/unban", methods=["POST"])
+@login_required
+def unban_user(username: str):
+    if not current_user.is_admin:
+        return redirect(url_for("blog.index"))
+    target_username = (username or "").strip()
+    return_to = (request.form.get("return_to") or "").strip()
+    fallback = url_for("admin.user_list")
+    redirect_target = fallback
+    if return_to and return_to.startswith(fallback):
+        redirect_target = return_to
+    if not target_username:
+        flash("未指定用户", "error")
+        return redirect(redirect_target)
+    datastore = get_datastore()
+    target = datastore.get_user(target_username)
+    if not target:
+        flash("用户不存在", "error")
+        return redirect(redirect_target)
+    if not target.get("is_banned"):
+        flash("用户当前未被封禁", "info")
+        return redirect(redirect_target)
+    try:
+        datastore.set_user_banned(target_username, False)
+    except ValueError as exc:
+        flash(str(exc), "error")
+    else:
+        flash("用户已解封", "success")
+    return redirect(redirect_target)
+
+
 @bp.route("/users/tags/bulk", methods=["POST"])
 @login_required
 def bulk_update_user_tags():

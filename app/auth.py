@@ -23,12 +23,16 @@ def login():
         else:
             datastore = get_datastore()
             user = datastore.verify_user(username, password)
-            if user:
-                login_user(user)
+            if user is None:
+                flash("用户名或密码错误", "error")
+            elif getattr(user, "is_banned", False):
+                flash("账号已被封禁，请联系管理员", "error")
+            elif login_user(user):
                 flash("登录成功", "success")
                 next_url = request.args.get("next") or url_for("blog.index")
                 return redirect(next_url)
-            flash("用户名或密码错误", "error")
+            else:
+                flash("登录失败，请联系管理员", "error")
     return render_template("auth/login.html")
 
 
