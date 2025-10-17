@@ -260,6 +260,11 @@ main {
     color: var(--text-subtle);
 }
 
+.tag-badge.danger {
+    background: rgba(239, 68, 68, 0.18);
+    color: var(--danger);
+}
+
 .link-more {
     color: var(--primary);
     text-decoration: none;
@@ -1292,6 +1297,17 @@ td {
 th {
     background: rgba(79, 70, 229, 0.08);
     font-weight: 600;
+}
+
+.row-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+}
+
+.row-actions form {
+    margin: 0;
 }
 
 .table-control {

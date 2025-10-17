@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 
-from flask import Flask, current_app
+from flask import Flask, current_app, flash, redirect, request, url_for
 from flask_login import LoginManager, current_user
 
 from .datastore import DataStore
@@ -31,6 +31,18 @@ def create_app() -> Flask:
     app.register_blueprint(blog_bp)
     app.register_blueprint(admin_bp, url_prefix="/admin")
     app.register_blueprint(tag_bp, url_prefix="/tags")
+
+    @app.before_request
+    def enforce_banned_guard():
+        if not current_user.is_authenticated:
+            return None
+        if not getattr(current_user, "is_banned", False):
+            return None
+        endpoint = request.endpoint or ""
+        if endpoint == "auth.logout" or endpoint.startswith("static"):
+            return None
+        flash("账号已被封禁，请联系管理员", "error")
+        return redirect(url_for("auth.logout"))
 
     @app.context_processor
     def inject_globals():
