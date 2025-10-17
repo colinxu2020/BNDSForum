@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}私信 - BNDS Blog{% endblock %}
+{% block content %}
+<div class="messages-page">
+    <div class="messages-container card">
+        <aside class="messages-sidebar">
+            <form method="get" class="messages-search">
+                <label for="message-search" class="sr-only">搜索用户名</label>
+                <input id="message-search"
+                       type="text"
+                       name="q"
+                       value="{{ search_query }}"
+                       placeholder="搜索用户名">
+                <button type="submit" class="button secondary small">搜索</button>
+            </form>
+            {% if search_query %}
+                <div class="messages-search-results">
+                    <h3>搜索结果</h3>
+                    {% if search_results %}
+                        <ul>
+                            {% for result in search_results %}
+                                <li>
+                                    <a href="{{ url_for('messages.inbox', **{'with': result['username']}) }}">
+                                        {{ result['display'] }}
+                                    </a>
+                                </li>
+                            {% endfor %}
+                        </ul>
+                    {% else %}
+                        <p class="empty-state">没有找到匹配的用户。</p>
+                    {% endif %}
+                </div>
+            {% endif %}
+            <h3>最近联系人</h3>
+            {% if conversations %}
+                <ul class="messages-conversations">
+                    {% for convo in conversations %}
+                        <li class="{% if selected_username == convo['username'] %}is-active{% endif %}">
+                            <a href="{{ url_for('messages.inbox', **{'with': convo['username']}) }}">
+                                <div class="conversation-header">
+                                    <span class="conversation-name">{{ convo['display'] }}</span>
+                                    {% if convo['unread_count'] %}
+                                        <span class="conversation-unread">{{ convo['unread_count'] }}</span>
+                                    {% endif %}
+                                </div>
+                                <div class="conversation-preview">
+                                    {{ convo['last_message']['content'] | truncate(42, True) }}
+                                </div>
+                            </a>
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <p class="empty-state">暂无私信会话，搜索用户名开始聊天。</p>
+            {% endif %}
+        </aside>
+        <section class="messages-thread">
+            {% if selected_username %}
+                <header class="thread-header">
+                    <div>
+                        <h2>{{ selected_user.display }}</h2>
+                        {% if selected_preference == 'silent' %}
+                            <p class="thread-note">当前对话设置为静默模式，新消息不会显示提醒。</p>
+                        {% elif selected_preference == 'block' %}
+                            <p class="thread-note danger">你已拉黑该用户，对方发送的消息会被拦截。</p>
+                        {% endif %}
+                    </div>
+                    <form method="post"
+                          action="{{ url_for('messages.update_preference', username=selected_username) }}"
+                          class="thread-preference-form">
+                        <label for="preference-select">提醒设置</label>
+                        <select id="preference-select" name="preference">
+                            {% for option in preference_options %}
+                                <option value="{{ option.value }}"
+                                        {% if option.value == selected_preference %}selected{% endif %}>
+                                    {{ option.label }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                        <button type="submit" class="button secondary small">保存</button>
+                    </form>
+                </header>
+                <div class="messages-list">
+                    {% if messages %}
+                        {% for message in messages %}
+                            <article class="message-item {% if message.is_outgoing %}from-self{% else %}from-them{% endif %}">
+                                <div class="message-meta">{{ message.created_at }}</div>
+                                <div class="message-body">
+                                    {{ message.content | urlize | replace('\n', '<br>') | safe }}
+                                </div>
+                            </article>
+                        {% endfor %}
+                    {% else %}
+                        <p class="empty-state">暂时没有消息，发送第一条问候吧。</p>
+                    {% endif %}
+                </div>
+                <form method="post" action="{{ url_for('messages.send') }}" class="messages-compose">
+                    <input type="hidden" name="recipient" value="{{ selected_username }}">
+                    <label for="message-content">发送新消息</label>
+                    <textarea id="message-content"
+                              name="content"
+                              rows="4"
+                              placeholder="输入你的私信内容"
+                              required></textarea>
+                    <button type="submit" class="button primary">发送</button>
+                </form>
+            {% else %}
+                <div class="messages-empty">
+                    <h2>选择联系人开始聊天</h2>
+                    <p>左侧可搜索用户名或选择已有会话。</p>
+                </div>
+            {% endif %}
+        </section>
+    </div>
+</div>
+{% endblock %}
