@@ -65,20 +65,22 @@
                             <p class="thread-note danger">你已拉黑该用户，对方发送的消息会被拦截。</p>
                         {% endif %}
                     </div>
-                    <form method="post"
-                          action="{{ url_for('messages.update_preference', username=selected_username) }}"
-                          class="thread-preference-form">
-                        <label for="preference-select">提醒设置</label>
-                        <select id="preference-select" name="preference">
-                            {% for option in preference_options %}
-                                <option value="{{ option.value }}"
-                                        {% if option.value == selected_preference %}selected{% endif %}>
-                                    {{ option.label }}
-                                </option>
-                            {% endfor %}
-                        </select>
-                        <button type="submit" class="button secondary small">保存</button>
-                    </form>
+                    {% if allow_preference_change %}
+                        <form method="post"
+                              action="{{ url_for('messages.update_preference', username=selected_username) }}"
+                              class="thread-preference-form">
+                            <label for="preference-select">提醒设置</label>
+                            <select id="preference-select" name="preference">
+                                {% for option in preference_options %}
+                                    <option value="{{ option.value }}"
+                                            {% if option.value == selected_preference %}selected{% endif %}>
+                                        {{ option.label }}
+                                    </option>
+                                {% endfor %}
+                            </select>
+                            <button type="submit" class="button secondary small">保存</button>
+                        </form>
+                    {% endif %}
                 </header>
                 <div class="messages-list">
                     {% if messages %}
@@ -94,16 +96,18 @@
                         <p class="empty-state">暂时没有消息，发送第一条问候吧。</p>
                     {% endif %}
                 </div>
-                <form method="post" action="{{ url_for('messages.send') }}" class="messages-compose">
-                    <input type="hidden" name="recipient" value="{{ selected_username }}">
-                    <label for="message-content">发送新消息</label>
-                    <textarea id="message-content"
-                              name="content"
-                              rows="4"
-                              placeholder="输入你的私信内容"
-                              required></textarea>
-                    <button type="submit" class="button primary">发送</button>
-                </form>
+                {% if allow_compose %}
+                    <form method="post" action="{{ url_for('messages.send') }}" class="messages-compose">
+                        <input type="hidden" name="recipient" value="{{ selected_username }}">
+                        <label for="message-content">发送新消息</label>
+                        <textarea id="message-content"
+                                  name="content"
+                                  rows="4"
+                                  placeholder="输入你的私信内容"
+                                  required></textarea>
+                        <button type="submit" class="button primary">发送</button>
+                    </form>
+                {% endif %}
             {% else %}
                 <div class="messages-empty">
                     <h2>选择联系人开始聊天</h2>

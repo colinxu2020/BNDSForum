@@ -10,6 +10,7 @@ from .datastore import (
     MESSAGE_PREFERENCES,
     MESSAGE_PREFERENCE_DEFAULT,
     MessagePreference,
+    SYSTEM_USERNAME,
 )
 
 
@@ -34,6 +35,8 @@ def _inbox_url(with_username: str | None = None) -> str:
 
 
 def _display_name(record: Dict[str, object] | None, username: str) -> str:
+    if username == SYSTEM_USERNAME:
+        return "系统通知"
     if not record:
         return username
     real_name = str(record.get("real_name") or "").strip()
@@ -43,6 +46,12 @@ def _display_name(record: Dict[str, object] | None, username: str) -> str:
 
 
 def _user_brief(datastore: DataStore, username: str) -> Dict[str, object]:
+    if username == SYSTEM_USERNAME:
+        return {
+            "username": SYSTEM_USERNAME,
+            "real_name": "",
+            "display": "系统通知",
+        }
     record = datastore.get_user(username) or {}
     return {
         "username": username,
@@ -91,7 +100,7 @@ def inbox():
     selected_preference: MessagePreference = MESSAGE_PREFERENCE_DEFAULT
     if selected_username:
         target_user = datastore.get_user(selected_username)
-        if not target_user:
+        if not target_user and selected_username != SYSTEM_USERNAME:
             flash("未找到目标用户", "error")
             return redirect(_inbox_url())
         thread_messages = [
@@ -102,18 +111,25 @@ def inbox():
             for message in datastore.get_conversation_messages(current_username, selected_username)
         ]
         datastore.mark_conversation_read(current_username, selected_username)
-        selected_preference = datastore.get_message_preference(current_username, selected_username)
+        if selected_username != SYSTEM_USERNAME:
+            selected_preference = datastore.get_message_preference(current_username, selected_username)
+        else:
+            selected_preference = MESSAGE_PREFERENCE_DEFAULT
         selected_user_info = _user_brief(datastore, selected_username)
 
     preference_options = []
-    for value in _PREFERENCE_ORDER:
-        if value in MESSAGE_PREFERENCES:
-            preference_options.append(
-                {
-                    "value": value,
-                    "label": _PREFERENCE_LABELS[value],
-                }
-            )
+    if selected_username != SYSTEM_USERNAME:
+        for value in _PREFERENCE_ORDER:
+            if value in MESSAGE_PREFERENCES:
+                preference_options.append(
+                    {
+                        "value": value,
+                        "label": _PREFERENCE_LABELS[value],
+                    }
+                )
+
+    allow_preference_change = bool(selected_username and selected_username != SYSTEM_USERNAME)
+    allow_compose = bool(selected_username and selected_username != SYSTEM_USERNAME)
 
     return render_template(
         "messages/inbox.html",
@@ -125,6 +141,8 @@ def inbox():
         preference_options=sorted(preference_options, key=lambda item: item["value"]),
         search_query=query,
         search_results=search_results,
+        allow_preference_change=allow_preference_change,
+        allow_compose=allow_compose,
     )
 
 
@@ -136,6 +154,9 @@ def send():
     content = (request.form.get("content") or "").strip()
     if not recipient:
         flash("请选择要发送私信的用户", "error")
+        return redirect(_inbox_url())
+    if recipient == SYSTEM_USERNAME:
+        flash("系统通知账号仅用于下发消息，无法主动发送私信。", "error")
         return redirect(_inbox_url())
     if recipient == current_user.username:
         flash("不能给自己发送私信", "error")
@@ -159,6 +180,9 @@ def send():
 def update_preference(username: str):
     datastore = get_datastore()
     preference_value = (request.form.get("preference") or "").strip()
+    if username == SYSTEM_USERNAME:
+        flash("系统通知账号的提醒方式不可更改。", "error")
+        return redirect(_inbox_url(username))
     if preference_value not in MESSAGE_PREFERENCES:
         flash("不支持的私信偏好", "error")
         return redirect(_inbox_url(username))

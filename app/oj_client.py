@@ -5,7 +5,7 @@ import os
 import re
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Set
 
 import requests
 from bs4 import BeautifulSoup
@@ -250,48 +250,77 @@ class OnlineJudgeClient:
         group_id: str,
         user_cache: Dict[str, Tuple[str, str]],
     ) -> Tuple[List[OJGroupMember], bool]:
-        try:
-            resp = session.get(
-                self._url(f"/group/view?id={group_id}"),
-                timeout=self.timeout,
-                verify=self.verify_ssl,
-            )
-        except SSLError as exc:
-            raise OJServiceUnavailable("无法建立到 OJ 的安全连接") from exc
-        except RequestException as exc:
-            raise OJServiceUnavailable(f"加载小组 {group_id} 详情失败") from exc
-        if resp.status_code != 200:
-            return ([], False)
-
-        soup = BeautifulSoup(resp.text, "html.parser")
-        table = None
-        for candidate in soup.select("table.table"):
-            if candidate.select_one("tbody tr a[href*='/user/view']"):
-                table = candidate
-                break
-        if not table:
-            return ([], False)
-
         members: List[OJGroupMember] = []
-        for row in table.select("tbody tr"):
-            link = row.select_one("td a[href*='/user/view']")
-            if not link:
-                continue
-            href = link.get("href", "")
-            user_id = self._parse_query_param(href, "id")
-            if not user_id:
-                continue
-            real_name = link.get_text(strip=True)
-            username, resolved_real_name = self._resolve_user_identity(session, user_id, user_cache)
-            if not username:
-                continue
-            members.append(
-                OJGroupMember(
-                    username=username,
-                    real_name=resolved_real_name or real_name,
+        seen_usernames: Set[str] = set()
+        page = 1
+        per_page = 50
+        success = False
+
+        while True:
+            params = {"id": group_id, "per-page": per_page}
+            if page > 1:
+                params["page"] = page
+            try:
+                resp = session.get(
+                    self._url("/group/view"),
+                    params=params,
+                    timeout=self.timeout,
+                    verify=self.verify_ssl,
                 )
-            )
-        return (members, True)
+            except SSLError as exc:
+                raise OJServiceUnavailable("无法建立到 OJ 的安全连接") from exc
+            except RequestException as exc:
+                raise OJServiceUnavailable(f"加载小组 {group_id} 详情失败") from exc
+            if resp.status_code != 200:
+                break
+
+            soup = BeautifulSoup(resp.text, "html.parser")
+            table = None
+            for candidate in soup.select("table.table"):
+                if candidate.select_one("tbody tr a[href*='/user/view']"):
+                    table = candidate
+                    break
+            if not table:
+                if page == 1:
+                    return ([], False)
+                break
+
+            rows = table.select("tbody tr")
+            if not rows:
+                break
+
+            new_entries = 0
+            for row in rows:
+                link = row.select_one("td a[href*='/user/view']")
+                if not link:
+                    continue
+                href = link.get("href", "")
+                user_id = self._parse_query_param(href, "id")
+                if not user_id:
+                    continue
+                real_name = link.get_text(strip=True)
+                username, resolved_real_name = self._resolve_user_identity(session, user_id, user_cache)
+                if not username or username in seen_usernames:
+                    continue
+                seen_usernames.add(username)
+                members.append(
+                    OJGroupMember(
+                        username=username,
+                        real_name=resolved_real_name or real_name,
+                    )
+                )
+                new_entries += 1
+
+            if new_entries:
+                success = True
+
+            if len(rows) < per_page or new_entries == 0:
+                break
+
+            page += 1
+            time.sleep(0.2)
+
+        return (members, success)
 
     def _resolve_user_identity(
         self,
