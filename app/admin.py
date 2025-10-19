@@ -20,6 +20,14 @@ def get_datastore() -> DataStore:
     return current_app.extensions["datastore"]
 
 
+def _notify_admins(message: str) -> None:
+    datastore = get_datastore()
+    try:
+        datastore.send_system_notification(message)
+    except Exception:  # pragma: no cover - best effort
+        current_app.logger.exception("发送系统通知失败：%s", message)
+
+
 @bp.before_request
 def check_admin():
     if request.endpoint and request.endpoint.startswith("admin."):
@@ -349,6 +357,7 @@ def add_normal_tag():
         datastore = get_datastore()
         datastore.add_normal_tag(tag_name)
         flash("标签已添加", "success")
+        _notify_admins(f"管理员 {current_user.username} 新增常见标签：{tag_name}")
     return redirect(url_for("admin.dashboard"))
 
 
@@ -364,6 +373,7 @@ def delete_normal_tag():
     datastore = get_datastore()
     datastore.remove_normal_tag(tag_name)
     flash("标签已删除", "success")
+    _notify_admins(f"管理员 {current_user.username} 删除常见标签：{tag_name}")
     return redirect(url_for("admin.legacy_tag_config"))
 
 
@@ -383,6 +393,7 @@ def add_column_tag():
             flash(str(exc), "error")
         else:
             flash("栏目已添加", "success")
+            _notify_admins(f"管理员 {current_user.username} 新增栏目标签：{tag_name}")
     return redirect(url_for("admin.legacy_tag_config"))
 
 
@@ -402,6 +413,7 @@ def delete_column_tag():
         flash(str(exc), "error")
     else:
         flash("栏目已删除", "success")
+        _notify_admins(f"管理员 {current_user.username} 删除栏目标签：{tag_name}")
     return redirect(url_for("admin.dashboard"))
 
 
@@ -422,6 +434,7 @@ def add_constant_tag():
         else:
             if inserted:
                 flash("固定标签已添加", "success")
+                _notify_admins(f"管理员 {current_user.username} 新增固定标签：{tag_name}")
             else:
                 flash("固定标签已存在", "info")
     return redirect(url_for("admin.dashboard"))
@@ -443,6 +456,7 @@ def delete_constant_tag():
         flash(str(exc), "error")
     else:
         flash("固定标签已删除", "success")
+        _notify_admins(f"管理员 {current_user.username} 删除固定标签：{tag_name}")
     return redirect(url_for("admin.dashboard"))
 
 
@@ -490,6 +504,8 @@ def add_tree_node():
             flash(str(exc), "error")
         else:
             flash("节点已创建", "success")
+            description = tag or "（空标签节点）"
+            _notify_admins(f"管理员 {current_user.username} 在标签树新增节点：{description}")
     return redirect(url_for("admin.legacy_tag_config"))
 
 
@@ -512,7 +528,8 @@ def update_tree_node():
             flash(str(exc), "error")
         else:
             flash("节点已更新", "success")
-    return redirect(url_for("admin.dashboard"))
+            _notify_admins(f"管理员 {current_user.username} 更新标签树节点 {node_id}，新标签：{tag or '（空）'}")
+    return redirect(url_for("admin.legacy_tag_config"))
 
 
 @bp.route("/tree/delete", methods=["POST"])
@@ -531,7 +548,8 @@ def delete_tree_node():
             flash(str(exc), "error")
         else:
             flash("节点已删除", "success")
-    return redirect(url_for("admin.dashboard"))
+            _notify_admins(f"管理员 {current_user.username} 删除标签树节点：{node_id}")
+    return redirect(url_for("admin.legacy_tag_config"))
 
 
 @bp.route("/users/update", methods=["POST"])
@@ -606,6 +624,9 @@ def update_user():
         datastore.update_user_constant_tags(username, constant_tags)
     datastore.set_user_role(username, role)
     flash("用户信息已更新", "success")
+    _notify_admins(
+        f"管理员 {current_user.username} 更新用户 {username} 信息：角色={role}，真实姓名={real_name}"
+    )
     fallback = url_for("admin.user_list")
     redirect_target = fallback
     if return_to and return_to.startswith(fallback):
@@ -652,6 +673,7 @@ def ban_user(username: str):
         flash(str(exc), "error")
     else:
         flash("用户已封禁", "success")
+        _notify_admins(f"管理员 {current_user.username} 封禁用户：{target_username}")
     return redirect(redirect_target)
 
 
@@ -683,6 +705,7 @@ def unban_user(username: str):
         flash(str(exc), "error")
     else:
         flash("用户已解封", "success")
+        _notify_admins(f"管理员 {current_user.username} 解封用户：{target_username}")
     return redirect(redirect_target)
 
 
@@ -756,6 +779,9 @@ def bulk_update_user_tags():
     if updated_count:
         action_label = "添加" if operation == "add" else "移除"
         flash(f"已为 {updated_count} 位用户{action_label}固定标签", "success")
+        _notify_admins(
+            f"管理员 {current_user.username}{action_label}固定标签 {', '.join(selected_tags)} 给 {updated_count} 位用户"
+        )
     else:
         flash("选中的用户无需更新固定标签", "info")
 

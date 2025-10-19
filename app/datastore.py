@@ -5,7 +5,7 @@ import logging
 import sqlite3
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from threading import RLock, local
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Literal, Tuple, cast
@@ -42,6 +42,10 @@ MESSAGE_PREFERENCES: Set[MessagePreference] = {"notify", "silent", "block"}
 
 
 logger = logging.getLogger(__name__)
+
+CLASS_SYNC_INTERVAL = timedelta(minutes=5)
+CLASS_SYNC_LOCK_STALE = timedelta(minutes=10)
+SYSTEM_USERNAME = "SYSTEM"
 
 
 class SQLiteConnectionManager:
@@ -116,6 +120,62 @@ class DataStore:
         self._setup_database()
         self._oj_client = OnlineJudgeClient()
 
+    def _get_metadata_value(self, key: str) -> Optional[str]:
+        conn = self._conn()
+        row = conn.execute("SELECT value FROM metadata WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else None
+
+    def _set_metadata_value(self, key: str, value: str) -> None:
+        conn = self._conn()
+        with conn:
+            conn.execute(
+                "INSERT INTO metadata (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (key, value),
+            )
+
+    @staticmethod
+    def _parse_timestamp(value: Optional[str]) -> Optional[datetime]:
+        if not value:
+            return None
+        try:
+            return datetime.strptime(value, ISO_FORMAT)
+        except ValueError:
+            return None
+
+    def _try_acquire_class_sync_lock(self, now: datetime) -> bool:
+        conn = self._conn()
+        lock_key = "class_sync_lock"
+        last_run_key = "class_sync_last_run"
+        with conn:
+            last_run_row = conn.execute(
+                "SELECT value FROM metadata WHERE key = ?",
+                (last_run_key,),
+            ).fetchone()
+            last_run = self._parse_timestamp(last_run_row["value"] if last_run_row else None)
+            if last_run and now - last_run < CLASS_SYNC_INTERVAL:
+                logger.debug("跳过班级同步：上次同步距今不足 %s", CLASS_SYNC_INTERVAL)
+                return False
+
+            lock_row = conn.execute(
+                "SELECT value FROM metadata WHERE key = ?",
+                (lock_key,),
+            ).fetchone()
+            lock_timestamp = self._parse_timestamp(lock_row["value"] if lock_row else None)
+            if lock_timestamp and now - lock_timestamp < CLASS_SYNC_LOCK_STALE:
+                logger.debug("跳过班级同步：已有进行中的同步任务（%s 前启动）", lock_timestamp)
+                return False
+
+            conn.execute(
+                "INSERT INTO metadata (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                (lock_key, now.strftime(ISO_FORMAT)),
+            )
+            return True
+
+    def _release_class_sync_lock(self) -> None:
+        conn = self._conn()
+        with conn:
+            conn.execute("DELETE FROM metadata WHERE key = ?", ("class_sync_lock",))
+
     def _conn(self) -> sqlite3.Connection:
         return self._connection_manager.get_connection()
 
@@ -135,6 +195,7 @@ class DataStore:
             self._sync_constant_tag_catalog(conn)
             self._ensure_root_node(conn)
             self._bootstrap_admin(conn)
+            self._ensure_system_user(conn)
             self._setup_complete = True
 
     @staticmethod
@@ -545,6 +606,27 @@ class DataStore:
                     ("admin", password_hash, "admin", json.dumps([], ensure_ascii=False), ""),
                 )
 
+    def _ensure_system_user(self, conn: sqlite3.Connection) -> None:
+        with conn:
+            row = conn.execute(
+                "SELECT role FROM users WHERE username = ?",
+                (SYSTEM_USERNAME,),
+            ).fetchone()
+            if row:
+                conn.execute(
+                    "UPDATE users SET role = 'system', is_banned = 1 WHERE username = ?",
+                    (SYSTEM_USERNAME,),
+                )
+                return
+            placeholder_password = generate_password_hash(uuid.uuid4().hex)
+            conn.execute(
+                """
+                INSERT INTO users (username, password_hash, role, constant_tags, real_name, is_banned)
+                VALUES (?, ?, 'system', '[]', '', 1)
+                """,
+                (SYSTEM_USERNAME, placeholder_password),
+            )
+
     # Public API methods --------------------------------------------------
 
     def list_users(self) -> List[Dict[str, Any]]:
@@ -554,6 +636,8 @@ class DataStore:
         ).fetchall()
         users: List[Dict[str, Any]] = []
         for row in rows:
+            if row["username"] == SYSTEM_USERNAME:
+                continue
             users.append(
                 {
                     "username": row["username"],
@@ -586,6 +670,8 @@ class DataStore:
         ).fetchall()
         results: List[Dict[str, Any]] = []
         for row in rows:
+            if row["username"] == SYSTEM_USERNAME:
+                continue
             results.append(
                 {
                     "username": row["username"],
@@ -1073,8 +1159,8 @@ class DataStore:
             raise ValueError("未找到发送者")
         if not self.get_user(recipient):
             raise ValueError("未找到收件人")
-        preference = self.get_message_preference(recipient, sender)
-        if preference == "block":
+        preference = self.get_message_preference(recipient, sender) if not is_system else MESSAGE_PREFERENCE_DEFAULT
+        if preference == "block" and not is_system:
             raise PermissionError("对方已设置拉黑，无法发送私信")
         message_id = uuid.uuid4().hex
         timestamp = utcnow_str()
@@ -1105,6 +1191,36 @@ class DataStore:
             "is_read": False,
             "is_system": is_system,
         }
+
+    def list_admin_users(self) -> List[Dict[str, Any]]:
+        conn = self._conn()
+        rows = conn.execute(
+            "SELECT username, real_name FROM users WHERE role = 'admin' AND is_banned = 0"
+        ).fetchall()
+        return [
+            {
+                "username": row["username"],
+                "real_name": row["real_name"],
+            }
+            for row in rows
+        ]
+
+    def send_system_notification(self, content: str) -> None:
+        admins = self.list_admin_users()
+        if not admins:
+            logger.warning("系统通知未发送：当前没有管理员账户")
+            return
+        for admin in admins:
+            username = admin["username"]
+            try:
+                self.send_private_message(
+                    SYSTEM_USERNAME,
+                    username,
+                    content,
+                    is_system=True,
+                )
+            except Exception:  # pragma: no cover - best effort
+                logger.exception("发送系统通知给 %s 失败", username)
 
     def list_conversations(self, username: str) -> List[Dict[str, Any]]:
         conn = self._conn()
@@ -1293,18 +1409,29 @@ class DataStore:
     def update_class_groups_from_credentials(self, username: str, password: str) -> None:
         if not self._oj_client:
             return
+        now = datetime.now(timezone.utc)
+        if not self._try_acquire_class_sync_lock(now):
+            return
         try:
             groups = self._oj_client.fetch_groups(username, password)
+            if self._sync_class_groups(groups):
+                self._set_metadata_value("class_sync_last_run", now.strftime(ISO_FORMAT))
         except OJInvalidCredentials:
             return
-        except (OJAccountNotFound, OJServiceUnavailable):
+        except OJAccountNotFound:
+            self.send_system_notification(f"班级同步失败：OJ 账号 {username} 不存在或不可访问。")
             return
-        self._sync_class_groups(groups)
+        except OJServiceUnavailable as exc:
+            self.send_system_notification(f"班级同步失败：无法访问 BNDSOJ（{exc}）。")
+            return
+        finally:
+            self._release_class_sync_lock()
 
-    def _sync_class_groups(self, groups: List[OJGroup]) -> None:
+    def _sync_class_groups(self, groups: List[OJGroup]) -> bool:
         if not groups:
             logger.warning("班级同步返回空结果，保留现有数据")
-            return
+            self.send_system_notification("班级同步失败：未获取到任何小组信息，请检查 BNDSOJ 状态。")
+            return False
 
         timestamp = utcnow_str()
         previous_groups = {group["tag"]: group for group in self.list_class_groups()}
@@ -1315,6 +1442,7 @@ class DataStore:
         memberships_by_user: Dict[str, Set[str]] = {}
         real_name_by_user: Dict[str, str] = {}
 
+        fallback_groups: List[str] = []
         for group in groups:
             tag = (group.tag or "").strip()
             if not tag:
@@ -1336,6 +1464,7 @@ class DataStore:
                     ]
                     memberships_complete = True
                     logger.info("班级 %s 使用上次同步的成员列表（远端数据不可用）", tag)
+                    fallback_groups.append(display)
 
             if not members and not memberships_complete:
                 logger.warning("无法获取班级 %s 成员信息，将保留现有成员列表", tag)
@@ -1350,6 +1479,7 @@ class DataStore:
                         if record.get("username")
                     ]
                     memberships_complete = True
+                    fallback_groups.append(display)
 
             class_tags.add(tag)
             last_synced = timestamp if memberships_complete else previous_groups.get(tag, {}).get("last_synced_at", timestamp)
@@ -1366,7 +1496,7 @@ class DataStore:
 
         if not class_tags:
             logger.warning("班级同步未解析到有效标签，跳过更新")
-            return
+            return False
 
         conn = self._conn()
         with conn:
@@ -1452,6 +1582,14 @@ class DataStore:
                         self.update_user_real_name(username, display_name)
                     except ValueError:
                         pass
+
+        if fallback_groups:
+            self.send_system_notification(
+                "班级同步提醒：以下小组未能从 BNDSOJ 获取最新成员，已沿用上次同步数据："
+                + ", ".join(sorted(set(fallback_groups)))
+            )
+
+        return True
 
     def build_class_column_tree(self) -> Dict[str, Any]:
         class_groups = self.list_class_groups()
