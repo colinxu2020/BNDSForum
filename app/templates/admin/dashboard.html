@@ -3,25 +3,99 @@
 {% block content %}
 <section class="card admin-hero">
     <h1>管理后台</h1>
-    <p class="form-tip">维护常用标签、管理标签树结构，并快速查看用户概况。</p>
+    <p class="form-tip">自动同步班级与栏目结构，维护常用标签，并查看系统概况。</p>
     <div class="action-group">
-        <a class="button primary" href="{{ url_for('tag.tree_view') }}">查看标签树</a>
+        <a class="button primary" href="{{ url_for('tag.class_overview') }}">班级视图</a>
+        <a class="button ghost" href="{{ url_for('admin.legacy_tag_config') }}">标签树（Legacy）</a>
         <a class="button ghost" href="{{ url_for('admin.user_list') }}">用户管理</a>
         <a class="button ghost" href="{{ url_for('admin.export_posts') }}">导出博客 Markdown</a>
     </div>
 </section>
 
+<section class="card">
+    <h2>班级同步状态</h2>
+    <p class="form-tip">
+        班级及成员列表会在用户登录时通过 BNDSOJ 自动刷新。
+        当前共同步 {{ class_overview | length }} 个班级。
+    </p>
+    {% if class_overview %}
+        <div class="responsive-table">
+            <table>
+                <thead>
+                <tr>
+                    <th>班级名称</th>
+                    <th>固定标签</th>
+                    <th>成员数量</th>
+                    <th>最近同步</th>
+                </tr>
+                </thead>
+                <tbody>
+                {% for item in class_overview %}
+                    <tr>
+                        <td>{{ item.display_name }}</td>
+                        <td>{{ item.tag }}</td>
+                        <td>
+                            {{ item.member_count }}
+                            {% set members = class_memberships.get(item.tag, []) %}
+                            {% if members %}
+                                <details>
+                                    <summary>查看成员</summary>
+                                    <ul class="compact-list">
+                                        {% for member in members %}
+                                            <li>{{ member.real_name or member.username }}（{{ member.username }}）</li>
+                                        {% endfor %}
+                                    </ul>
+                                </details>
+                            {% endif %}
+                        </td>
+                        <td>{{ item.last_synced_at or '—' }}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <p class="empty-state">尚未同步到任何班级，请使用 BNDSOJ 账号登录以初始化数据。</p>
+    {% endif %}
+</section>
+
 <section class="grid two-column">
     <div class="card">
-        <h2>常用标签</h2>
+        <h2>栏目标签</h2>
+        <p class="form-tip">每个班级都会自动挂载这些栏目标签。</p>
+        <form class="form-inline" method="post" action="{{ url_for('admin.add_column_tag') }}">
+            <label class="sr-only" for="column_tag_name">新增栏目</label>
+            <input type="text" id="column_tag_name" name="tag_name" placeholder="输入栏目名称" required>
+            <button type="submit" class="button primary">添加</button>
+        </form>
+        {% if column_tags %}
+            <ul class="tag-manage-list">
+                {% for tag in column_tags %}
+                    <li>
+                        <span>{{ tag }}</span>
+                        <form method="post" action="{{ url_for('admin.delete_column_tag') }}" onsubmit="return confirm('删除栏目后会从所有班级中移除，确认继续吗？');">
+                            <input type="hidden" name="tag_name" value="{{ tag }}">
+                            <button type="submit" class="button danger ghost">删除</button>
+                        </form>
+                    </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p class="empty-state">还没有定义栏目。添加后便可在班级视图中筛选。</p>
+        {% endif %}
+    </div>
+
+    <div class="card">
+        <h2>常见标签（非栏目）</h2>
+        <p class="form-tip">用于在文章中标注专题、活动等信息，班级筛选页会提供组合过滤。</p>
         <form class="form-inline" method="post" action="{{ url_for('admin.add_normal_tag') }}">
-            <label class="sr-only" for="normal_tag_name">新增标签</label>
+            <label class="sr-only" for="normal_tag_name">新增常见标签</label>
             <input type="text" id="normal_tag_name" name="tag_name" placeholder="输入标签名称" required>
             <button type="submit" class="button primary">添加</button>
         </form>
-        {% if normal_tags %}
+        {% if common_tags %}
             <ul class="tag-manage-list">
-                {% for tag in normal_tags %}
+                {% for tag in common_tags %}
                     <li>
                         <span>{{ tag }}</span>
                         <form method="post" action="{{ url_for('admin.delete_normal_tag') }}" onsubmit="return confirm('确定删除该标签吗？');">
@@ -32,112 +106,34 @@
                 {% endfor %}
             </ul>
         {% else %}
-            <p class="empty-state">暂时没有常用标签。</p>
+            <p class="empty-state">暂无非栏目常见标签。</p>
         {% endif %}
-    </div>
-
-    <div class="card">
-        <h2>固定标签</h2>
-        <p class="form-tip">固定标签可分配给用户并自动同步到其文章。</p>
-        <form class="form-inline" method="post" action="{{ url_for('admin.add_constant_tag') }}">
-            <label class="sr-only" for="constant_tag_name">新增固定标签</label>
-            <input type="text" id="constant_tag_name" name="tag_name" placeholder="输入固定标签" required>
-            <button type="submit" class="button primary">添加</button>
-        </form>
-        {% if constant_tags %}
-            <ul class="tag-manage-list">
-                {% for tag in constant_tags %}
-                    <li>
-                        <span>{{ tag }}</span>
-                        <form method="post" action="{{ url_for('admin.delete_constant_tag') }}" onsubmit="return confirm('确定删除该固定标签并移除所有关联吗？');">
-                            <input type="hidden" name="tag_name" value="{{ tag }}">
-                            <button type="submit" class="button danger ghost">删除</button>
-                        </form>
-                    </li>
-                {% endfor %}
-            </ul>
-        {% else %}
-            <p class="empty-state">暂无固定标签。</p>
-        {% endif %}
-    </div>
-
-    <div class="card">
-        <h2>添加标签树节点</h2>
-        <form class="form-grid" method="post" action="{{ url_for('admin.add_tree_node') }}">
-            <div class="form-field">
-                <label for="parent_id">父节点</label>
-                <select id="parent_id" name="parent_id" required>
-                    {% for option in parent_choices %}
-                        <option value="{{ option.id }}">{{ option.label }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="form-field">
-                <label for="node_tag">节点标签</label>
-                <select id="node_tag" name="tag_name">
-                    <option value="">（不设置标签）</option>
-                    {% if constant_tags %}
-                        <optgroup label="固定标签">
-                            {% for tag in constant_tags %}
-                                <option value="{{ tag }}">{{ tag }}</option>
-                            {% endfor %}
-                        </optgroup>
-                    {% endif %}
-                    {% if normal_tags %}
-                        <optgroup label="常用标签">
-                            {% for tag in normal_tags %}
-                                <option value="{{ tag }}">{{ tag }}</option>
-                            {% endfor %}
-                        </optgroup>
-                    {% endif %}
-                </select>
-                <p class="field-hint">可选择已存在的常用或固定标签；留空创建占位节点。</p>
-            </div>
-            <div class="form-actions">
-                <button type="submit" class="button primary">添加节点</button>
-            </div>
-        </form>
     </div>
 </section>
 
 <section class="card">
-    <h2>标签树概览</h2>
-    <div class="responsive-table">
-        <table>
-            <thead>
-            <tr>
-                <th>节点 ID</th>
-                <th>路径</th>
-                <th>标签名称</th>
-                <th>操作</th>
-            </tr>
-            </thead>
-            <tbody>
-            {% for row in tree_rows %}
-                <tr>
-                    <td>{{ row.id }}</td>
-                    <td>{{ ' / '.join(row.path) if row.path else '根节点' }}</td>
-                    <td>{{ row.tag or '（空）' }}</td>
-                    <td>
-                        {% if not row.is_root %}
-                            <form class="inline-form" method="post" action="{{ url_for('admin.update_tree_node') }}">
-                                <input type="hidden" name="node_id" value="{{ row.id }}">
-                                <input type="text" name="tag" value="{{ row.tag or '' }}" placeholder="标签名称">
-                                <button type="submit" class="button ghost">更新</button>
-                            </form>
-                            <form class="inline-form" method="post" action="{{ url_for('admin.delete_tree_node') }}" onsubmit="return confirm('确定删除该节点及其所有子节点吗？');">
-                                <input type="hidden" name="node_id" value="{{ row.id }}">
-                                <button type="submit" class="button danger ghost">删除</button>
-                            </form>
-                        {% else %}
-                            <span class="muted-text">根节点不可修改</span>
-                        {% endif %}
-                    </td>
-                </tr>
+    <h2>固定标签（非班级）</h2>
+    <p class="form-tip">用于手工维护的固定标签，班级标签已自动同步并不可手动删除。</p>
+    <form class="form-inline" method="post" action="{{ url_for('admin.add_constant_tag') }}">
+        <label class="sr-only" for="constant_tag_name">新增固定标签</label>
+        <input type="text" id="constant_tag_name" name="tag_name" placeholder="输入固定标签" required>
+        <button type="submit" class="button primary">添加</button>
+    </form>
+    {% if constant_tags %}
+        <ul class="tag-manage-list">
+            {% for tag in constant_tags %}
+                <li>
+                    <span>{{ tag }}</span>
+                    <form method="post" action="{{ url_for('admin.delete_constant_tag') }}" onsubmit="return confirm('确定删除该固定标签并移除所有关联吗？');">
+                        <input type="hidden" name="tag_name" value="{{ tag }}">
+                        <button type="submit" class="button danger ghost">删除</button>
+                    </form>
+                </li>
             {% endfor %}
-            </tbody>
-        </table>
-    </div>
+        </ul>
+    {% else %}
+        <p class="empty-state">暂无额外固定标签。</p>
+    {% endif %}
 </section>
 
 <section class="card">
