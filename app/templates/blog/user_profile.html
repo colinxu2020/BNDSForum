@@ -49,6 +49,25 @@
 
 <section class="card">
     <h2>全部文章</h2>
+    {% if common_tags %}
+        <form method="get" class="tag-filter-form">
+            <fieldset class="filter-field tag-filter-field">
+                <legend>按常见标签筛选</legend>
+                <div class="checkbox-chip-group">
+                    {% for tag in common_tags %}
+                        <label class="checkbox-chip">
+                            <input type="checkbox" name="tag" value="{{ tag }}" {% if tag in selected_tags %}checked{% endif %}>
+                            <span>{{ tag }}</span>
+                        </label>
+                    {% endfor %}
+                </div>
+                <div class="filter-actions">
+                    <button type="submit" class="button primary small">应用</button>
+                    <a class="button ghost small" href="{{ url_for('blog.user_profile', username=profile['username']) }}">清除</a>
+                </div>
+            </fieldset>
+        </form>
+    {% endif %}
     {% if posts %}
         <div class="post-list">
             {% for post in posts %}
@@ -91,7 +110,11 @@
             {% endfor %}
         </div>
     {% else %}
-        <p class="empty-state">该用户还没有发布文章。</p>
+        {% if selected_tags %}
+            <p class="empty-state">没有符合所选常见标签组合的文章。</p>
+        {% else %}
+            <p class="empty-state">该用户还没有发布文章。</p>
+        {% endif %}
     {% endif %}
 </section>
 

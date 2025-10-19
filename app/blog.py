@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import re
-from typing import Dict, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
@@ -456,6 +456,16 @@ def user_profile(username: str):
         abort(404)
 
     can_edit_real_name = current_user.is_authenticated and current_user.is_admin
+    common_tags = datastore.list_common_tags()
+    common_tag_set = set(common_tags)
+    selected_tags: List[str] = []
+    seen_tags: Set[str] = set()
+    for value in request.args.getlist("tag"):
+        text = value.strip()
+        if not text or text in seen_tags or text not in common_tag_set:
+            continue
+        seen_tags.add(text)
+        selected_tags.append(text)
 
     if request.method == "POST":
         if not can_edit_real_name:
@@ -470,6 +480,14 @@ def user_profile(username: str):
 
     user_map = _user_lookup(datastore)
     raw_posts = [post for post in datastore.list_posts() if post.get("author") == username]
+    if selected_tags:
+        filtered_posts = []
+        required = set(selected_tags)
+        for post in raw_posts:
+            post_tags = set(post.get("tags", []))
+            if required.issubset(post_tags):
+                filtered_posts.append(post)
+        raw_posts = filtered_posts
     viewer_favorite_ids: Set[str] = set()
     if current_user.is_authenticated:
         viewer_favorite_ids = datastore.favorite_post_ids(
@@ -490,4 +508,6 @@ def user_profile(username: str):
         can_edit_real_name=can_edit_real_name,
         viewing_self=viewing_self,
         favorite_posts=favorite_posts if viewing_self else None,
+        common_tags=common_tags,
+        selected_tags=selected_tags,
     )

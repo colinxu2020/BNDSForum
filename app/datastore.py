@@ -1,19 +1,22 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import RLock, local
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Literal, cast
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Literal, Tuple, cast
 
 from flask_login import UserMixin
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from .oj_client import (
     OJAccountNotFound,
+    OJGroup,
+    OJGroupMember,
     OJInvalidCredentials,
     OJServiceUnavailable,
     OJUserInfo,
@@ -28,9 +31,17 @@ def utcnow_str() -> str:
     return datetime.now(timezone.utc).strftime(ISO_FORMAT)
 
 
+def _stable_node_id(prefix: str, value: str) -> str:
+    seed = f"{prefix}:{value}"
+    return f"{prefix}-{uuid.uuid5(uuid.NAMESPACE_DNS, seed).hex[:12]}"
+
+
 MessagePreference = Literal["notify", "silent", "block"]
 MESSAGE_PREFERENCE_DEFAULT: MessagePreference = "notify"
 MESSAGE_PREFERENCES: Set[MessagePreference] = {"notify", "silent", "block"}
+
+
+logger = logging.getLogger(__name__)
 
 
 class SQLiteConnectionManager:
@@ -180,7 +191,8 @@ class DataStore:
                 CREATE INDEX IF NOT EXISTS idx_comments_post ON comments(post_id);
 
                 CREATE TABLE IF NOT EXISTS normal_tags (
-                    name TEXT PRIMARY KEY
+                    name TEXT PRIMARY KEY,
+                    is_column INTEGER NOT NULL DEFAULT 0
                 );
 
                 CREATE TABLE IF NOT EXISTS post_favorites (
@@ -198,6 +210,22 @@ class DataStore:
                 CREATE TABLE IF NOT EXISTS constant_tags (
                     name TEXT PRIMARY KEY
                 );
+
+                CREATE TABLE IF NOT EXISTS class_groups (
+                    tag TEXT PRIMARY KEY,
+                    display_name TEXT NOT NULL,
+                    last_synced_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS class_memberships (
+                    class_tag TEXT NOT NULL,
+                    username TEXT NOT NULL,
+                    real_name TEXT,
+                    PRIMARY KEY (class_tag, username),
+                    FOREIGN KEY(class_tag) REFERENCES class_groups(tag) ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_class_memberships_user ON class_memberships(username);
 
                 CREATE TABLE IF NOT EXISTS tag_nodes (
                     id TEXT PRIMARY KEY,
@@ -242,6 +270,13 @@ class DataStore:
             }
             if "is_banned" not in columns:
                 conn.execute("ALTER TABLE users ADD COLUMN is_banned INTEGER NOT NULL DEFAULT 0")
+
+            normal_tag_columns = {
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(normal_tags)")
+            }
+            if "is_column" not in normal_tag_columns:
+                conn.execute("ALTER TABLE normal_tags ADD COLUMN is_column INTEGER NOT NULL DEFAULT 0")
 
     def _ensure_root_node(self, conn: sqlite3.Connection) -> None:
         with conn:
@@ -1210,7 +1245,246 @@ class DataStore:
         rows = conn.execute("SELECT name FROM normal_tags ORDER BY name").fetchall()
         return [row["name"] for row in rows]
 
+    def list_column_tags(self) -> List[str]:
+        conn = self._conn()
+        rows = conn.execute(
+            "SELECT name FROM normal_tags WHERE is_column = 1 ORDER BY name"
+        ).fetchall()
+        return [row["name"] for row in rows]
+
+    def list_common_tags(self) -> List[str]:
+        conn = self._conn()
+        rows = conn.execute(
+            "SELECT name FROM normal_tags WHERE is_column = 0 ORDER BY name"
+        ).fetchall()
+        return [row["name"] for row in rows]
+
+    # Class groups ----------------------------------------------------
+
+    def list_class_groups(self) -> List[Dict[str, Any]]:
+        conn = self._conn()
+        rows = conn.execute(
+            "SELECT tag, display_name, last_synced_at FROM class_groups ORDER BY display_name"
+        ).fetchall()
+        return [
+            {
+                "tag": row["tag"],
+                "display_name": row["display_name"],
+                "last_synced_at": row["last_synced_at"],
+            }
+            for row in rows
+        ]
+
+    def class_memberships(self) -> Dict[str, List[Dict[str, str]]]:
+        conn = self._conn()
+        rows = conn.execute(
+            "SELECT class_tag, username, real_name FROM class_memberships ORDER BY class_tag, username"
+        ).fetchall()
+        result: Dict[str, List[Dict[str, str]]] = {}
+        for row in rows:
+            result.setdefault(row["class_tag"], []).append(
+                {
+                    "username": row["username"],
+                    "real_name": row["real_name"] or "",
+                }
+            )
+        return result
+
+    def update_class_groups_from_credentials(self, username: str, password: str) -> None:
+        if not self._oj_client:
+            return
+        try:
+            groups = self._oj_client.fetch_groups(username, password)
+        except OJInvalidCredentials:
+            return
+        except (OJAccountNotFound, OJServiceUnavailable):
+            return
+        self._sync_class_groups(groups)
+
+    def _sync_class_groups(self, groups: List[OJGroup]) -> None:
+        if not groups:
+            logger.warning("班级同步返回空结果，保留现有数据")
+            return
+
+        timestamp = utcnow_str()
+        previous_groups = {group["tag"]: group for group in self.list_class_groups()}
+        previous_memberships = self.class_memberships()
+
+        prepared_groups: List[Tuple[str, str, List[OJGroupMember], str]] = []
+        class_tags: Set[str] = set()
+        memberships_by_user: Dict[str, Set[str]] = {}
+        real_name_by_user: Dict[str, str] = {}
+
+        for group in groups:
+            tag = (group.tag or "").strip()
+            if not tag:
+                continue
+            display = (group.display_name or "").strip() or tag
+            members = list(group.members)
+            memberships_complete = getattr(group, "memberships_complete", True)
+
+            if (not members or not memberships_complete) and tag in previous_memberships:
+                fallback_members = previous_memberships.get(tag, [])
+                if fallback_members:
+                    members = [
+                        OJGroupMember(
+                            username=(record.get("username", "") or ""),
+                            real_name=(record.get("real_name", "") or ""),
+                        )
+                        for record in fallback_members
+                        if record.get("username")
+                    ]
+                    memberships_complete = True
+                    logger.info("班级 %s 使用上次同步的成员列表（远端数据不可用）", tag)
+
+            if not members and not memberships_complete:
+                logger.warning("无法获取班级 %s 成员信息，将保留现有成员列表", tag)
+                fallback_members = previous_memberships.get(tag, [])
+                if fallback_members:
+                    members = [
+                        OJGroupMember(
+                            username=(record.get("username", "") or ""),
+                            real_name=(record.get("real_name", "") or ""),
+                        )
+                        for record in fallback_members
+                        if record.get("username")
+                    ]
+                    memberships_complete = True
+
+            class_tags.add(tag)
+            last_synced = timestamp if memberships_complete else previous_groups.get(tag, {}).get("last_synced_at", timestamp)
+            prepared_groups.append((tag, display, members, last_synced))
+
+            for member in members:
+                username = (member.username or "").strip()
+                if not username:
+                    continue
+                memberships_by_user.setdefault(username, set()).add(tag)
+                display_name = (member.real_name or "").strip()
+                if display_name and username not in real_name_by_user:
+                    real_name_by_user[username] = display_name
+
+        if not class_tags:
+            logger.warning("班级同步未解析到有效标签，跳过更新")
+            return
+
+        conn = self._conn()
+        with conn:
+            existing_class_tags = set(previous_groups.keys())
+            if class_tags:
+                placeholders = ",".join(["?"] * len(class_tags))
+                conn.execute(
+                    f"DELETE FROM class_groups WHERE tag NOT IN ({placeholders})",
+                    tuple(class_tags),
+                )
+            else:
+                conn.execute("DELETE FROM class_groups")
+            conn.execute("DELETE FROM class_memberships")
+
+            for tag, display, members, last_synced in prepared_groups:
+                if not tag:
+                    continue
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO class_groups (tag, display_name, last_synced_at)
+                    VALUES (?, ?, ?)
+                    """,
+                    (tag, display, last_synced),
+                )
+                member_rows = [
+                    (tag, (member.username or "").strip(), (member.real_name or "").strip())
+                    for member in members
+                    if (member.username or "").strip()
+                ]
+                if member_rows:
+                    conn.executemany(
+                        """
+                        INSERT OR REPLACE INTO class_memberships (class_tag, username, real_name)
+                        VALUES (?, ?, ?)
+                        """,
+                        member_rows,
+                    )
+
+            if class_tags:
+                conn.executemany(
+                    "INSERT OR IGNORE INTO constant_tags (name) VALUES (?)",
+                    [(tag,) for tag in class_tags],
+                )
+            removed_class_tags = existing_class_tags - class_tags
+            if removed_class_tags:
+                conn.executemany(
+                    "DELETE FROM constant_tags WHERE name = ?",
+                    [(tag,) for tag in removed_class_tags],
+                )
+
+        all_users = self.list_users()
+        existing_usernames = {user["username"] for user in all_users}
+        for user in all_users:
+            username = user["username"]
+            membership_tags = memberships_by_user.get(username, set())
+            existing_tags = set(user.get("constant_tags", []))
+            non_class_tags = [tag for tag in existing_tags if tag not in class_tags]
+            desired_tags = sorted(set(non_class_tags) | membership_tags)
+            if sorted(existing_tags) != desired_tags:
+                self.update_user_constant_tags(username, desired_tags)
+            remote_real_name = real_name_by_user.get(username)
+            if remote_real_name and remote_real_name != (user.get("real_name") or ""):
+                try:
+                    self.update_user_real_name(username, remote_real_name)
+                except ValueError:
+                    pass
+
+        for username, tags in memberships_by_user.items():
+            if username in existing_usernames:
+                continue
+            try:
+                self.create_user(
+                    username=username,
+                    password=uuid.uuid4().hex,
+                    constant_tags=sorted(tags),
+                    real_name=real_name_by_user.get(username, ""),
+                )
+            except ValueError:
+                self.update_user_constant_tags(username, sorted(tags))
+                display_name = real_name_by_user.get(username)
+                if display_name:
+                    try:
+                        self.update_user_real_name(username, display_name)
+                    except ValueError:
+                        pass
+
+    def build_class_column_tree(self) -> Dict[str, Any]:
+        class_groups = self.list_class_groups()
+        column_tags = self.list_column_tags()
+
+        nodes: Dict[str, Dict[str, Any]] = {}
+        root_children: List[str] = []
+        nodes["root"] = {"id": "root", "tag": None, "children": []}
+
+        for class_group in class_groups:
+            class_tag = (class_group.get("tag") or "").strip()
+            if not class_tag:
+                continue
+            class_node_id = _stable_node_id("class", class_tag)
+            nodes[class_node_id] = {"id": class_node_id, "tag": class_tag, "children": []}
+            root_children.append(class_node_id)
+            for column_tag in column_tags:
+                column_value = (column_tag or "").strip()
+                if not column_value:
+                    continue
+                column_node_id = _stable_node_id("column", f"{class_tag}::{column_value}")
+                nodes[column_node_id] = {
+                    "id": column_node_id,
+                    "tag": column_value,
+                    "children": [],
+                }
+                nodes[class_node_id]["children"].append(column_node_id)
+
+        nodes["root"]["children"] = root_children
+        return {"nodes": list(nodes.values())}
+
     # Constant tags ---------------------------------------------------
+
 
     def list_constant_tags(self) -> List[str]:
         conn = self._conn()
@@ -1236,6 +1510,12 @@ class DataStore:
         conn = self._conn()
         with conn:
             rows = conn.execute("SELECT username, constant_tags FROM users").fetchall()
+            blocking = conn.execute(
+                "SELECT 1 FROM class_groups WHERE tag = ?",
+                (name,),
+            ).fetchone()
+            if blocking:
+                raise ValueError("不能删除同步的班级固定标签")
             conn.execute("DELETE FROM constant_tags WHERE name = ?", (name,))
         updates: List[tuple[str, List[str]]] = []
         for row in rows:
@@ -1247,10 +1527,33 @@ class DataStore:
         for username, remaining in updates:
             self.update_user_constant_tags(username, remaining)
 
-    def add_normal_tag(self, tag: str) -> None:
+    def add_normal_tag(self, tag: str, *, is_column: bool = False) -> None:
+        name = (tag or "").strip()
+        if not name:
+            raise ValueError("标签名称不能为空")
         conn = self._conn()
         with conn:
-            conn.execute("INSERT OR IGNORE INTO normal_tags (name) VALUES (?)", (tag,))
+            existing = conn.execute(
+                "SELECT is_column FROM normal_tags WHERE name = ?",
+                (name,),
+            ).fetchone()
+            if existing:
+                if is_column and not existing["is_column"]:
+                    conn.execute(
+                        "UPDATE normal_tags SET is_column = 1 WHERE name = ?",
+                        (name,),
+                    )
+            else:
+                conn.execute(
+                    "INSERT INTO normal_tags (name, is_column) VALUES (?, ?)",
+                    (name, 1 if is_column else 0),
+                )
+
+    def add_column_tag(self, tag: str) -> None:
+        self.add_normal_tag(tag, is_column=True)
+
+    def remove_column_tag(self, tag: str) -> None:
+        self.remove_normal_tag(tag)
 
     def remove_normal_tag(self, tag: str) -> None:
         conn = self._conn()

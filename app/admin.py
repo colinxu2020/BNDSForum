@@ -190,18 +190,31 @@ def dashboard():
         return redirect(url_for("blog.index"))
     datastore = get_datastore()
     users = datastore.list_users()
-    normal_tags = datastore.list_normal_tags()
-    constant_tags = datastore.list_constant_tags()
-    tag_tree = datastore.get_tag_tree()
-    parent_choices = _build_parent_choices(tag_tree)
-    tree_rows = _build_tree_rows(tag_tree)
+    column_tags = datastore.list_column_tags()
+    common_tags = datastore.list_common_tags()
+    class_groups = datastore.list_class_groups()
+    memberships = datastore.class_memberships()
+    all_constant_tags = datastore.list_constant_tags()
+    class_tag_set = {group["tag"] for group in class_groups}
+    editable_constant_tags = [tag for tag in all_constant_tags if tag not in class_tag_set]
+    class_overview = [
+        {
+            "tag": group["tag"],
+            "display_name": group["display_name"],
+            "member_count": len(memberships.get(group["tag"], [])),
+            "last_synced_at": group["last_synced_at"],
+        }
+        for group in class_groups
+    ]
     return render_template(
         "admin/dashboard.html",
         users=users,
-        normal_tags=normal_tags,
-        constant_tags=constant_tags,
-        parent_choices=parent_choices,
-        tree_rows=tree_rows,
+        column_tags=column_tags,
+        common_tags=common_tags,
+        constant_tags=editable_constant_tags,
+        class_overview=class_overview,
+        class_memberships=memberships,
+        class_tags=sorted(class_tag_set),
     )
 
 
@@ -351,6 +364,44 @@ def delete_normal_tag():
     datastore = get_datastore()
     datastore.remove_normal_tag(tag_name)
     flash("标签已删除", "success")
+    return redirect(url_for("admin.legacy_tag_config"))
+
+
+@bp.route("/columns/add", methods=["POST"])
+@login_required
+def add_column_tag():
+    if not current_user.is_admin:
+        return redirect(url_for("blog.index"))
+    tag_name = request.form.get("tag_name", "").strip()
+    if not tag_name:
+        flash("栏目名称不能为空", "error")
+    else:
+        datastore = get_datastore()
+        try:
+            datastore.add_column_tag(tag_name)
+        except ValueError as exc:
+            flash(str(exc), "error")
+        else:
+            flash("栏目已添加", "success")
+    return redirect(url_for("admin.legacy_tag_config"))
+
+
+@bp.route("/columns/delete", methods=["POST"])
+@login_required
+def delete_column_tag():
+    if not current_user.is_admin:
+        return redirect(url_for("blog.index"))
+    tag_name = request.form.get("tag_name", "").strip()
+    if not tag_name:
+        flash("未指定栏目", "error")
+        return redirect(url_for("admin.dashboard"))
+    datastore = get_datastore()
+    try:
+        datastore.remove_column_tag(tag_name)
+    except ValueError as exc:
+        flash(str(exc), "error")
+    else:
+        flash("栏目已删除", "success")
     return redirect(url_for("admin.dashboard"))
 
 
@@ -395,6 +446,26 @@ def delete_constant_tag():
     return redirect(url_for("admin.dashboard"))
 
 
+@bp.route("/tags/legacy")
+@login_required
+def legacy_tag_config():
+    if not current_user.is_admin:
+        return redirect(url_for("blog.index"))
+    datastore = get_datastore()
+    tag_tree = datastore.get_tag_tree()
+    parent_choices = _build_parent_choices(tag_tree)
+    tree_rows = _build_tree_rows(tag_tree)
+    normal_tags = datastore.list_normal_tags()
+    constant_tags = datastore.list_constant_tags()
+    return render_template(
+        "admin/tag_legacy.html",
+        normal_tags=normal_tags,
+        constant_tags=constant_tags,
+        parent_choices=parent_choices,
+        tree_rows=tree_rows,
+    )
+
+
 @bp.route("/tree/add", methods=["POST"])
 @login_required
 def add_tree_node():
@@ -408,7 +479,7 @@ def add_tree_node():
     if tag_value:
         if tag_value not in available_tags:
             flash("请选择已有的标签", "error")
-            return redirect(url_for("admin.dashboard"))
+            return redirect(url_for("admin.legacy_tag_config"))
         tag = tag_value
     if not parent_id:
         flash("请选择父节点", "error")
@@ -419,7 +490,7 @@ def add_tree_node():
             flash(str(exc), "error")
         else:
             flash("节点已创建", "success")
-    return redirect(url_for("admin.dashboard"))
+    return redirect(url_for("admin.legacy_tag_config"))
 
 
 @bp.route("/tree/update", methods=["POST"])

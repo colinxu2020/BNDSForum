@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}班级视图 - BNDS Blog{% endblock %}
+{% block content %}
+<section class="card">
+    <h1>班级筛选视图</h1>
+    <p class="form-tip">
+        先勾选班级与栏目，再选择一个常见标签即可查看任务完成情况与相关文章。
+        标签树页面仍可通过下方按钮访问。
+    </p>
+    <div class="action-group">
+        <a class="button ghost" href="{{ url_for('tag.tree_view') }}">查看标签树</a>
+    </div>
+</section>
+
+<section class="card class-filter-card">
+    <form method="get" class="class-filter-form">
+        {% if selected_common_tag %}
+            <input type="hidden" name="common_tag" value="{{ selected_common_tag }}">
+        {% endif %}
+        <fieldset class="filter-field class-field">
+            <legend>班级</legend>
+            <div class="checkbox-chip-group">
+                {% for group in class_groups %}
+                    <label class="checkbox-chip">
+                        <input type="checkbox" name="classes" value="{{ group.tag }}" {% if group.tag in selected_classes %}checked{% endif %}>
+                        <span>{{ group.display_name }}</span>
+                    </label>
+                {% endfor %}
+            </div>
+        </fieldset>
+        <div class="filter-layout">
+            <fieldset class="filter-field column-field">
+                <legend>栏目</legend>
+                {% if column_tags %}
+                    <div class="checkbox-chip-group column-chip-group">
+                        {% for column in column_tags %}
+                            <label class="checkbox-chip">
+                                <input type="checkbox" name="columns" value="{{ column }}" {% if column in selected_columns %}checked{% endif %}>
+                                <span>{{ column }}</span>
+                            </label>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="empty-state">尚未配置栏目，请先在管理后台添加。</p>
+                {% endif %}
+            </fieldset>
+            <div class="filter-main">
+                {% if not selected_classes and not selected_columns %}
+                    <p class="empty-state">请选择至少一个班级和栏目，然后点击下方“应用筛选”。</p>
+                {% elif selected_classes and not selected_columns %}
+                    <p class="empty-state">已选择班级，请继续选择栏目。</p>
+                {% elif selected_columns and not selected_classes %}
+                    <p class="empty-state">已选择栏目，请先选择班级。</p>
+                {% elif show_tag_picker %}
+                    <h3>选择常见标签</h3>
+                    <p class="form-tip">点击标签进入统计视图，可随时返回重新选择。</p>
+                    {% if common_tags %}
+                        <div class="tag-collection compact">
+                            {% for tag in common_tags %}
+                                <a class="tag-badge" href="{{ url_for('tag.class_overview', classes=selected_classes, columns=selected_columns, common_tag=tag) }}">{{ tag }}</a>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <p class="empty-state">目前还没有常见标签，先在管理后台添加吧。</p>
+                    {% endif %}
+                {% elif show_results %}
+                    <div class="result-meta">
+                        <h3>筛选结果</h3>
+                        <p class="form-tip">
+                            班级：{{ selected_classes | join(', ') }} · 栏目：{{ selected_columns | join(', ') }} · 常见标签：{{ selected_common_tag }}
+                        </p>
+                        <div class="action-group">
+                            <a class="button ghost" href="{{ url_for('tag.class_overview', classes=selected_classes, columns=selected_columns) }}">返回标签选择</a>
+                        </div>
+                    </div>
+                {% else %}
+                    <p class="empty-state">调整勾选后点击“应用筛选”开始挑选常见标签。</p>
+                {% endif %}
+            </div>
+        </div>
+        <div class="filter-actions">
+            <button type="submit" class="button primary">应用筛选</button>
+            <a class="button ghost" href="{{ url_for('tag.class_overview') }}">清除选择</a>
+        </div>
+    </form>
+</section>
+
+{% if show_results %}
+<section class="grid two-column">
+    <div class="card">
+        <h2>班级完成情况</h2>
+        {% for class_tag in selected_classes %}
+            {% set class_info = class_lookup.get(class_tag) %}
+            {% set status = class_status.get(class_tag, {}) %}
+            <details class="class-status" {% if loop.first %}open{% endif %}>
+                <summary>{{ class_info.display_name if class_info else class_tag }}</summary>
+                <div class="status-section">
+                    <h3>已完成（{{ status.completed | length }}）</h3>
+                    {% if status.completed %}
+                        <ul class="member-list">
+                            {% for member in status.completed %}
+                                <li>{{ member.real_name or member.username }}（{{ member.username }}）</li>
+                            {% endfor %}
+                        </ul>
+                    {% else %}
+                        <p class="empty-state">暂无成员完成。</p>
+                    {% endif %}
+                </div>
+                <div class="status-section">
+                    <h3>未完成（{{ status.pending | length }}）</h3>
+                    {% if status.pending %}
+                        <ul class="member-list">
+                            {% for member in status.pending %}
+                                <li>{{ member.real_name or member.username }}（{{ member.username }}）</li>
+                            {% endfor %}
+                        </ul>
+                    {% else %}
+                        <p class="empty-state">所有成员均已完成。</p>
+                    {% endif %}
+                </div>
+                {% if status.extra_authors %}
+                    <div class="status-section">
+                        <h3>额外作者</h3>
+                        <p class="form-tip">以下作者不在同步的班级名单中：</p>
+                        <ul class="member-list">
+                            {% for member in status.extra_authors %}
+                                <li>{{ member.real_name or member.username }}（{{ member.username }}）</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                {% endif %}
+            </details>
+        {% endfor %}
+    </div>
+
+    <div class="card">
+        <h2>筛选文章</h2>
+        {% if filtered_posts %}
+            <div class="post-list">
+                {% for post in filtered_posts %}
+                    <article class="post-card card">
+                        <header>
+                            <h3><a href="{{ url_for('blog.detail', post_id=post['id']) }}">{{ post['title'] }}</a></h3>
+                            <div class="post-meta">
+                                <span>作者：<a href="{{ url_for('blog.user_profile', username=post['author_username']) }}">{{ post['author_display'] }}</a></span>
+                                <span>发布：{{ post['created_at'] }}</span>
+                            </div>
+                        </header>
+                        <div class="post-tags">
+                            {% for tag in post['tags'] %}
+                                <span class="tag-badge">{{ tag }}</span>
+                            {% endfor %}
+                        </div>
+                        <p class="muted-text">
+                            班级：{{ post['matched_classes'] | join(', ') }} · 栏目：{{ post['matched_columns'] | join(', ') }}
+                        </p>
+                        <a class="link-more" href="{{ url_for('blog.detail', post_id=post['id']) }}">查看详情</a>
+                    </article>
+                {% endfor %}
+            </div>
+        {% else %}
+            <p class="empty-state">暂无符合条件的文章，试试调整常见标签或栏目。</p>
+        {% endif %}
+    </div>
+</section>
+{% endif %}
+{% endblock %}
