@@ -20,9 +20,10 @@ bp = Blueprint("blog", __name__)
 _MATH_SEGMENT_RE = re.compile(
     r"(\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)|\$\$[\s\S]*?\$\$|\$(?!\$)[^$]*?\$)"
 )
-_KATEX_BRACE_PLACEHOLDERS = {
+_KATEX_PLACEHOLDERS = {
     r"\{": "KATEXLEFTBRACEPLACEHOLDER",
     r"\}": "KATEXRIGHTBRACEPLACEHOLDER",
+    "_": "KATEXUNDERSCOREPLACEHOLDER",
 }
 
 _CALLOUT_KINDS = {"info", "success", "warning", "error"}
@@ -112,7 +113,7 @@ _markdowner = _create_markdown_renderer()
 def _protect_katex_braces(source: str) -> str:
     def _replace(match: re.Match[str]) -> str:
         segment = match.group(0)
-        for token, placeholder in _KATEX_BRACE_PLACEHOLDERS.items():
+        for token, placeholder in _KATEX_PLACEHOLDERS.items():
             segment = segment.replace(token, placeholder)
         return segment
 
@@ -120,7 +121,7 @@ def _protect_katex_braces(source: str) -> str:
 
 
 def _restore_katex_braces(rendered: str) -> str:
-    for token, placeholder in _KATEX_BRACE_PLACEHOLDERS.items():
+    for token, placeholder in _KATEX_PLACEHOLDERS.items():
         rendered = rendered.replace("\\" + placeholder, placeholder)
         rendered = rendered.replace(placeholder, token)
     return rendered
