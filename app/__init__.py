@@ -25,12 +25,10 @@ def create_app() -> Flask:
     from .auth import bp as auth_bp
     from .blog import bp as blog_bp
     from .admin import bp as admin_bp
-    from .tag import bp as tag_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(blog_bp)
     app.register_blueprint(admin_bp, url_prefix="/admin")
-    app.register_blueprint(tag_bp, url_prefix="/tags")
 
     @app.before_request
     def enforce_banned_guard():

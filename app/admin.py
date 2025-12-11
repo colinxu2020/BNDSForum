@@ -10,7 +10,8 @@ import zipfile
 from flask import Blueprint, current_app, flash, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
 
-from .datastore import DataStore
+from .datastore import DataStore, DEFAULT_CATEGORY_TAG, DEFAULT_CLASS_TAG
+from .oj_client import OJServiceUnavailable
 
 
 bp = Blueprint("admin", __name__)
@@ -28,67 +29,6 @@ def check_admin():
         if not current_user.is_admin:
             flash("需要管理员权限", "error")
             return redirect(url_for("blog.index"))
-
-
-def _build_parent_choices(tag_tree: Dict) -> List[Dict[str, str]]:
-    nodes = {node["id"]: node for node in tag_tree.get("nodes", [])}
-    parents = {}
-    for node in tag_tree.get("nodes", []):
-        for child in node.get("children", []):
-            parents[child] = node["id"]
-
-    def path_tags(node_id: str) -> List[str]:
-        tags: List[str] = []
-        current = node_id
-        while current and current != "root":
-            node = nodes.get(current)
-            if node and node.get("tag"):
-                tags.append(node["tag"])
-            current = parents.get(current)
-        tags.reverse()
-        return tags
-
-    choices: List[Dict[str, str]] = []
-    for node_id in nodes:
-        tags = path_tags(node_id)
-        label = "根节点"
-        if tags:
-            label = "根节点 / " + " / ".join(tags)
-        choices.append({"id": node_id, "label": label})
-    choices.sort(key=lambda item: item["label"])
-    return choices
-
-
-def _build_tree_rows(tag_tree: Dict) -> List[Dict[str, str]]:
-    nodes = {node["id"]: node for node in tag_tree.get("nodes", [])}
-    parents = {}
-    for node in tag_tree.get("nodes", []):
-        for child in node.get("children", []):
-            parents[child] = node["id"]
-
-    def path(node_id: str) -> List[str]:
-        result: List[str] = []
-        current = node_id
-        while current and current != "root":
-            node = nodes.get(current)
-            if node and node.get("tag"):
-                result.append(node["tag"])
-            current = parents.get(current)
-        result.reverse()
-        return result
-
-    rows: List[Dict[str, str]] = []
-    for node_id, node in nodes.items():
-        rows.append(
-            {
-                "id": node_id,
-                "tag": node.get("tag"),
-                "path": path(node_id),
-                "is_root": node_id == "root",
-            }
-        )
-    rows.sort(key=lambda item: (0 if item["is_root"] else 1, item["path"]))
-    return rows
 
 
 _INVALID_SEGMENT_CHARS = set('<>:"/\\|?*')
@@ -190,18 +130,15 @@ def dashboard():
         return redirect(url_for("blog.index"))
     datastore = get_datastore()
     users = datastore.list_users()
-    normal_tags = datastore.list_normal_tags()
+    category_tags = datastore.list_category_tags()
     constant_tags = datastore.list_constant_tags()
-    tag_tree = datastore.get_tag_tree()
-    parent_choices = _build_parent_choices(tag_tree)
-    tree_rows = _build_tree_rows(tag_tree)
+    class_tags = datastore.list_class_tags(with_meta=True, auto_sync=True)
     return render_template(
         "admin/dashboard.html",
         users=users,
-        normal_tags=normal_tags,
+        category_tags=category_tags,
         constant_tags=constant_tags,
-        parent_choices=parent_choices,
-        tree_rows=tree_rows,
+        class_tags=class_tags,
     )
 
 
@@ -250,6 +187,8 @@ def export_posts():
                     [
                         ("created_at", post.get("created_at") or ""),
                         ("updated_at", post.get("updated_at") or ""),
+                        ("category_tag", post.get("category_tag") or DEFAULT_CATEGORY_TAG),
+                        ("class_tag", post.get("class_tag") or DEFAULT_CLASS_TAG),
                         ("tags", tags),
                     ]
                 )
@@ -326,31 +265,93 @@ def user_list():
 
 @bp.route("/tags/add", methods=["POST"])
 @login_required
-def add_normal_tag():
+def add_category_tag():
     if not current_user.is_admin:
         return redirect(url_for("blog.index"))
     tag_name = request.form.get("tag_name", "").strip()
     if not tag_name:
-        flash("标签名称不能为空", "error")
+        flash("类别标签名称不能为空", "error")
     else:
         datastore = get_datastore()
-        datastore.add_normal_tag(tag_name)
-        flash("标签已添加", "success")
+        datastore.add_category_tag(tag_name)
+        flash("类别标签已添加", "success")
     return redirect(url_for("admin.dashboard"))
 
 
 @bp.route("/tags/delete", methods=["POST"])
 @login_required
-def delete_normal_tag():
+def delete_category_tag():
     if not current_user.is_admin:
         return redirect(url_for("blog.index"))
     tag_name = request.form.get("tag_name", "").strip()
     if not tag_name:
-        flash("未指定标签", "error")
+        flash("未指定类别标签", "error")
         return redirect(url_for("admin.dashboard"))
     datastore = get_datastore()
-    datastore.remove_normal_tag(tag_name)
-    flash("标签已删除", "success")
+    datastore.remove_category_tag(tag_name)
+    flash("类别标签已删除", "success")
+    return redirect(url_for("admin.dashboard"))
+
+
+@bp.route("/class-tags/add", methods=["POST"])
+@login_required
+def add_class_tag():
+    if not current_user.is_admin:
+        return redirect(url_for("blog.index"))
+    tag_name = request.form.get("tag_name", "").strip()
+    if not tag_name:
+        flash("班级标签名称不能为空", "error")
+    else:
+        datastore = get_datastore()
+        try:
+            datastore.add_class_tag(tag_name, source="manual")
+        except ValueError as exc:
+            flash(str(exc), "error")
+        else:
+            flash("班级标签已添加", "success")
+    return redirect(url_for("admin.dashboard"))
+
+
+@bp.route("/class-tags/delete", methods=["POST"])
+@login_required
+def delete_class_tag():
+    if not current_user.is_admin:
+        return redirect(url_for("blog.index"))
+    tag_name = request.form.get("tag_name", "").strip()
+    if not tag_name:
+        flash("未指定班级标签", "error")
+        return redirect(url_for("admin.dashboard"))
+    datastore = get_datastore()
+    class_tags = datastore.list_class_tags(with_meta=True)
+    target = next((item for item in class_tags if item["name"] == tag_name), None)
+    if target and target.get("source") == "oj":
+        flash("OJ 同步的班级标签请在 OJ 中维护，如需隐藏可等待同步移除。", "error")
+        return redirect(url_for("admin.dashboard"))
+    if target and target.get("source") == "builtin" and tag_name == DEFAULT_CLASS_TAG:
+        flash("默认班级标签不可删除", "error")
+        return redirect(url_for("admin.dashboard"))
+    datastore.remove_class_tag(tag_name)
+    flash("班级标签已删除", "success")
+    return redirect(url_for("admin.dashboard"))
+
+
+@bp.route("/class-tags/sync", methods=["POST"])
+@login_required
+def sync_class_tags():
+    if not current_user.is_admin:
+        return redirect(url_for("blog.index"))
+    datastore = get_datastore()
+    try:
+        result = datastore.sync_class_tags_from_oj()
+    except OJServiceUnavailable as exc:
+        flash(f"同步 BNDSOJ 小组失败：{exc}", "error")
+    except Exception as exc:  # noqa: BLE001
+        flash(f"同步 BNDSOJ 小组失败：{exc}", "error")
+    else:
+        added = result.get("added", 0)
+        updated = result.get("updated", 0)
+        removed = result.get("removed", 0)
+        flash(f"同步完成：新增 {added}，更新 {updated}，移除 {removed}", "success")
     return redirect(url_for("admin.dashboard"))
 
 
@@ -392,74 +393,6 @@ def delete_constant_tag():
         flash(str(exc), "error")
     else:
         flash("固定标签已删除", "success")
-    return redirect(url_for("admin.dashboard"))
-
-
-@bp.route("/tree/add", methods=["POST"])
-@login_required
-def add_tree_node():
-    if not current_user.is_admin:
-        return redirect(url_for("blog.index"))
-    parent_id = request.form.get("parent_id", "")
-    tag_value = (request.form.get("tag_name") or "").strip()
-    datastore = get_datastore()
-    available_tags = set(datastore.list_normal_tags()) | set(datastore.list_constant_tags())
-    tag: str | None = None
-    if tag_value:
-        if tag_value not in available_tags:
-            flash("请选择已有的标签", "error")
-            return redirect(url_for("admin.dashboard"))
-        tag = tag_value
-    if not parent_id:
-        flash("请选择父节点", "error")
-    else:
-        try:
-            datastore.add_tree_node(parent_id, tag)
-        except ValueError as exc:
-            flash(str(exc), "error")
-        else:
-            flash("节点已创建", "success")
-    return redirect(url_for("admin.dashboard"))
-
-
-@bp.route("/tree/update", methods=["POST"])
-@login_required
-def update_tree_node():
-    if not current_user.is_admin:
-        return redirect(url_for("blog.index"))
-    node_id = request.form.get("node_id", "")
-    tag = request.form.get("tag", "").strip() or None
-    if not node_id:
-        flash("未指定节点", "error")
-    elif node_id == "root" and tag is not None:
-        flash("根节点不能设置标签", "error")
-    else:
-        datastore = get_datastore()
-        try:
-            datastore.update_tree_node(node_id, tag=tag)
-        except ValueError as exc:
-            flash(str(exc), "error")
-        else:
-            flash("节点已更新", "success")
-    return redirect(url_for("admin.dashboard"))
-
-
-@bp.route("/tree/delete", methods=["POST"])
-@login_required
-def delete_tree_node():
-    if not current_user.is_admin:
-        return redirect(url_for("blog.index"))
-    node_id = request.form.get("node_id", "")
-    if not node_id:
-        flash("未指定节点", "error")
-    else:
-        datastore = get_datastore()
-        try:
-            datastore.remove_tree_node(node_id)
-        except ValueError as exc:
-            flash(str(exc), "error")
-        else:
-            flash("节点已删除", "success")
     return redirect(url_for("admin.dashboard"))
 
 

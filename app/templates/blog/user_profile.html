@@ -54,10 +54,14 @@
             {% for post in posts %}
                 <article class="post-card card">
                     <header>
+                        <div class="post-tags">
+                            <span class="tag-badge">{{ post['category_tag'] }}</span>
+                            <span class="tag-badge">{{ post['class_tag'] }}</span>
+                        </div>
                         <h3><a href="{{ url_for('blog.detail', post_id=post['id']) }}">{{ post['title'] }}</a></h3>
                         <div class="post-meta">
-                            <span>发布：{{ post['created_at'] }}</span>
-                            <span>更新：{{ post['updated_at'] }}</span>
+                            <span>发布：{{ post['created_at'] | friendly_time }}</span>
+                            <span>更新：{{ post['updated_at'] | friendly_time }}</span>
                         </div>
                     </header>
                     {% if post['tags'] %}
@@ -103,10 +107,15 @@
             {% for post in favorite_posts %}
                 <article class="post-card card">
                     <header>
+                        <div class="post-tags">
+                            <span class="tag-badge">{{ post['category_tag'] }}</span>
+                            <span class="tag-badge">{{ post['class_tag'] }}</span>
+                        </div>
                         <h3><a href="{{ url_for('blog.detail', post_id=post['id']) }}">{{ post['title'] }}</a></h3>
                         <div class="post-meta">
-                            <span>收藏于：{{ post['favorited_at'] }}</span>
+                            <span>收藏于：{{ post['favorited_at'] | friendly_time }}</span>
                             <span>作者：{{ post['author_display'] }}</span>
+                            <span>更新：{{ post['updated_at'] | friendly_time }}</span>
                         </div>
                     </header>
                     {% if post['tags'] %}

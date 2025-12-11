@@ -15,6 +15,10 @@
 <article class="post-detail card">
     <header class="post-header">
         <h1>{{ post['title'] }}</h1>
+        <div class="post-tags">
+            <span class="tag-badge">{{ post['category_tag'] }}</span>
+            <span class="tag-badge">{{ post['class_tag'] }}</span>
+        </div>
         <div class="post-meta">
             <span>
                 作者：
@@ -26,12 +30,13 @@
                     {% endif %}
                 </a>
             </span>
-            <span>发布：{{ post['created_at'] }}</span>
-            <span>更新：{{ post['updated_at'] }}</span>
+            <span>发布：{{ post['created_at'] | friendly_time }}</span>
+            <span>更新：{{ post['updated_at'] | friendly_time }}</span>
         </div>
-        {% if post['tags'] %}
+        {% set extra_tags = post['tags'] | reject("equalto", post['category_tag']) | reject("equalto", post['class_tag']) | list %}
+        {% if extra_tags %}
         <div class="post-tags">
-            {% for tag in post['tags'] %}
+            {% for tag in extra_tags %}
                 <span class="tag-badge">{{ tag }}</span>
             {% endfor %}
         </div>
@@ -84,7 +89,7 @@
                                 {% endif %}
                             </a>
                         </strong>
-                        <span>{{ comment['created_at'] }}</span>
+                        <span>{{ comment['created_at'] | friendly_time }}</span>
                         {% if current_user.is_authenticated and (current_user.is_admin or comment['author'] == current_user.username) %}
                             <form method="post"
                                   action="{{ url_for('blog.delete_comment', post_id=post['id'], comment_id=comment['id']) }}"

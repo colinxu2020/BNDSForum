@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
 import sqlite3
+import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -22,6 +25,8 @@ from .oj_client import (
 
 
 ISO_FORMAT = "%Y-%m-%dT%H:%M:%S.%fZ"
+DEFAULT_CATEGORY_TAG = "未分类"
+DEFAULT_CLASS_TAG = "未分班"
 
 
 def utcnow_str() -> str:
@@ -97,6 +102,11 @@ class DataStore:
         self._connection_manager = SQLiteConnectionManager(self.db_path)
         self._setup_lock = RLock()
         self._setup_complete = False
+        self._logger = logging.getLogger(__name__)
+        self._class_sync_lock = RLock()
+        self._last_class_sync = 0.0
+        self._class_sync_interval = float(os.getenv("OJ_GROUP_SYNC_INTERVAL", 6 * 3600))
+        self._class_sync_enabled = os.getenv("OJ_SYNC_GROUPS", "true").lower() not in {"0", "false", "no", "off"}
         self._setup_database()
         self._oj_client = OnlineJudgeClient()
 
@@ -113,6 +123,8 @@ class DataStore:
             self._ensure_schema(conn)
             self._maybe_migrate_legacy(conn)
             self._sync_constant_tag_catalog(conn)
+            self._ensure_tag_defaults(conn)
+            self._migrate_post_tag_columns(conn)
             self._ensure_root_node(conn)
             self._bootstrap_admin(conn)
             self._setup_complete = True
@@ -143,11 +155,15 @@ class DataStore:
                     content TEXT NOT NULL,
                     created_at TEXT NOT NULL,
                     updated_at TEXT NOT NULL,
+                    category_tag TEXT NOT NULL DEFAULT '',
+                    class_tag TEXT NOT NULL DEFAULT '',
                     FOREIGN KEY(author) REFERENCES users(username) ON DELETE CASCADE
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_posts_author ON posts(author);
                 CREATE INDEX IF NOT EXISTS idx_posts_created_at ON posts(created_at);
+                CREATE INDEX IF NOT EXISTS idx_posts_category ON posts(category_tag);
+                CREATE INDEX IF NOT EXISTS idx_posts_class ON posts(class_tag);
 
                 CREATE TABLE IF NOT EXISTS post_tags (
                     post_id TEXT NOT NULL,
@@ -173,6 +189,15 @@ class DataStore:
                 CREATE TABLE IF NOT EXISTS normal_tags (
                     name TEXT PRIMARY KEY
                 );
+
+                CREATE TABLE IF NOT EXISTS class_tags (
+                    name TEXT PRIMARY KEY,
+                    source TEXT NOT NULL DEFAULT 'manual',
+                    external_id TEXT
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_class_tags_source ON class_tags(source);
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_class_tags_external ON class_tags(external_id) WHERE external_id IS NOT NULL;
 
                 CREATE TABLE IF NOT EXISTS post_favorites (
                     post_id TEXT NOT NULL,
@@ -206,6 +231,14 @@ class DataStore:
             }
             if "is_banned" not in columns:
                 conn.execute("ALTER TABLE users ADD COLUMN is_banned INTEGER NOT NULL DEFAULT 0")
+            post_columns = {
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(posts)")
+            }
+            if "category_tag" not in post_columns:
+                conn.execute("ALTER TABLE posts ADD COLUMN category_tag TEXT NOT NULL DEFAULT ''")
+            if "class_tag" not in post_columns:
+                conn.execute("ALTER TABLE posts ADD COLUMN class_tag TEXT NOT NULL DEFAULT ''")
 
     def _ensure_root_node(self, conn: sqlite3.Connection) -> None:
         with conn:
@@ -717,36 +750,99 @@ class DataStore:
     def list_posts(self) -> List[Dict[str, Any]]:
         conn = self._conn()
         rows = conn.execute(
-            "SELECT id, author, title, content, created_at, updated_at FROM posts ORDER BY created_at DESC"
+            """
+            SELECT id, author, title, content, created_at, updated_at, category_tag, class_tag
+            FROM posts
+            ORDER BY created_at DESC
+            """
+        ).fetchall()
+        return self._build_posts_from_rows(rows)
+
+    def list_posts_filtered(
+        self,
+        *,
+        category_tag: Optional[str] = None,
+        class_tags: Optional[Iterable[str]] = None,
+    ) -> List[Dict[str, Any]]:
+        conn = self._conn()
+        clauses: List[str] = []
+        params: List[Any] = []
+        if category_tag:
+            clauses.append("category_tag = ?")
+            params.append(category_tag.strip())
+        class_tag_values = [tag.strip() for tag in class_tags or [] if tag and tag.strip()]
+        if class_tag_values:
+            placeholders = ",".join(["?"] * len(class_tag_values))
+            clauses.append(f"class_tag IN ({placeholders})")
+            params.extend(class_tag_values)
+        where = ""
+        if clauses:
+            where = "WHERE " + " AND ".join(clauses)
+        rows = conn.execute(
+            f"""
+            SELECT id, author, title, content, created_at, updated_at, category_tag, class_tag
+            FROM posts
+            {where}
+            ORDER BY created_at DESC
+            """,
+            params,
         ).fetchall()
         return self._build_posts_from_rows(rows)
 
     def get_post(self, post_id: str) -> Optional[Dict[str, Any]]:
         conn = self._conn()
         row = conn.execute(
-            "SELECT id, author, title, content, created_at, updated_at FROM posts WHERE id = ?",
+            """
+            SELECT id, author, title, content, created_at, updated_at, category_tag, class_tag
+            FROM posts
+            WHERE id = ?
+            """,
             (post_id,),
         ).fetchone()
         if not row:
             return None
         return self._build_posts_from_rows([row])[0]
 
-    def create_post(self, author: str, title: str, content: str, tags: Iterable[str]) -> Dict[str, Any]:
+    def create_post(
+        self,
+        author: str,
+        title: str,
+        content: str,
+        *,
+        category_tag: str,
+        class_tag: str,
+        extra_tags: Optional[Iterable[str]] = None,
+        author_constant_tags: Optional[Iterable[str]] = None,
+    ) -> Dict[str, Any]:
         conn = self._conn()
         post_id = uuid.uuid4().hex
         timestamp = utcnow_str()
-        normalized_tags = self._normalize_tags(tags)
+        category = (category_tag or DEFAULT_CATEGORY_TAG).strip() or DEFAULT_CATEGORY_TAG
+        class_value = (class_tag or DEFAULT_CLASS_TAG).strip() or DEFAULT_CLASS_TAG
+        all_tags = [category, class_value]
+        if extra_tags:
+            all_tags.extend(extra_tags)
+        if author_constant_tags:
+            all_tags.extend(author_constant_tags)
+        normalized_tags = self._normalize_tags(all_tags)
         with conn:
             conn.execute(
-                "INSERT INTO posts (id, author, title, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
-                (post_id, author, title, content, timestamp, timestamp),
+                """
+                INSERT INTO posts (id, author, title, content, created_at, updated_at, category_tag, class_tag)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (post_id, author, title, content, timestamp, timestamp, category, class_value),
             )
+            self._ensure_category_exists(conn, category)
+            self._ensure_class_exists(conn, class_value)
             self._replace_post_tags(conn, post_id, normalized_tags)
         return self.get_post(post_id) or {
             "id": post_id,
             "author": author,
             "title": title,
             "content": content,
+            "category_tag": category,
+            "class_tag": class_value,
             "tags": normalized_tags,
             "created_at": timestamp,
             "updated_at": timestamp,
@@ -759,9 +855,28 @@ class DataStore:
         *,
         title: Optional[str] = None,
         content: Optional[str] = None,
-        tags: Optional[Iterable[str]] = None,
+        category_tag: Optional[str] = None,
+        class_tag: Optional[str] = None,
+        extra_tags: Optional[Iterable[str]] = None,
+        author_constant_tags: Optional[Iterable[str]] = None,
     ) -> Dict[str, Any]:
         conn = self._conn()
+        existing = self.get_post(post_id)
+        if existing is None:
+            raise ValueError("未找到文章")
+
+        current_category = (existing.get("category_tag") or DEFAULT_CATEGORY_TAG).strip() or DEFAULT_CATEGORY_TAG
+        current_class = (existing.get("class_tag") or DEFAULT_CLASS_TAG).strip() or DEFAULT_CLASS_TAG
+        new_category = (
+            (category_tag or current_category).strip() or DEFAULT_CATEGORY_TAG
+            if category_tag is not None
+            else current_category
+        )
+        new_class = (
+            (class_tag or current_class).strip() or DEFAULT_CLASS_TAG
+            if class_tag is not None
+            else current_class
+        )
         updates: List[str] = []
         params: List[Any] = []
         if title is not None:
@@ -770,21 +885,36 @@ class DataStore:
         if content is not None:
             updates.append("content = ?")
             params.append(content)
-        should_touch = bool(updates) or tags is not None
+        if category_tag is not None:
+            updates.append("category_tag = ?")
+            params.append(new_category)
+        if class_tag is not None:
+            updates.append("class_tag = ?")
+            params.append(new_class)
+        should_update_tags = extra_tags is not None or category_tag is not None or class_tag is not None or author_constant_tags is not None
+        should_touch = bool(updates) or should_update_tags
         if should_touch:
             updates.append("updated_at = ?")
             params.append(utcnow_str())
         params.append(post_id)
         with conn:
+            self._ensure_category_exists(conn, new_category)
+            self._ensure_class_exists(conn, new_class)
             if updates:
                 conn.execute(f"UPDATE posts SET {', '.join(updates)} WHERE id = ?", params)
-            if tags is not None:
-                normalized_tags = self._normalize_tags(tags)
+            if should_update_tags:
+                extras_existing = [tag for tag in existing.get("tags", []) if tag not in {current_category, current_class}]
+                extras = extras_existing
+                if extra_tags is not None:
+                    extras = list(extra_tags)
+                if author_constant_tags is not None:
+                    extras = extras + list(author_constant_tags)
+                normalized_tags = self._normalize_tags([new_category, new_class, *extras])
                 self._replace_post_tags(conn, post_id, normalized_tags)
-        updated = self.get_post(post_id)
-        if updated is None:
+        refreshed = self.get_post(post_id)
+        if refreshed is None:
             raise ValueError("未找到文章")
-        return updated
+        return refreshed
 
     def delete_post(self, post_id: str) -> None:
         conn = self._conn()
@@ -852,7 +982,7 @@ class DataStore:
         conn = self._conn()
         rows = conn.execute(
             """
-            SELECT p.id, p.author, p.title, p.content, p.created_at, p.updated_at, pf.created_at AS favorited_at
+            SELECT p.id, p.author, p.title, p.content, p.created_at, p.updated_at, p.category_tag, p.class_tag, pf.created_at AS favorited_at
             FROM post_favorites AS pf
             JOIN posts AS p ON pf.post_id = p.id
             WHERE pf.username = ?
@@ -906,6 +1036,9 @@ class DataStore:
     # Normal tags ------------------------------------------------------
 
     def list_normal_tags(self) -> List[str]:
+        return self.list_category_tags()
+
+    def list_category_tags(self) -> List[str]:
         conn = self._conn()
         rows = conn.execute("SELECT name FROM normal_tags ORDER BY name").fetchall()
         return [row["name"] for row in rows]
@@ -947,15 +1080,199 @@ class DataStore:
         for username, remaining in updates:
             self.update_user_constant_tags(username, remaining)
 
+    def _ensure_category_exists(self, conn: sqlite3.Connection, tag: str) -> None:
+        name = (tag or "").strip()
+        if not name:
+            return
+        conn.execute("INSERT OR IGNORE INTO normal_tags (name) VALUES (?)", (name,))
+
+    def _ensure_class_exists(self, conn: sqlite3.Connection, tag: str, *, source: str = "manual", external_id: str | None = None) -> None:
+        name = (tag or "").strip()
+        if not name:
+            return
+        conn.execute(
+            "INSERT OR IGNORE INTO class_tags (name, source, external_id) VALUES (?, ?, ?)",
+            (name, source, external_id),
+        )
+
+    def _ensure_tag_defaults(self, conn: sqlite3.Connection) -> None:
+        with conn:
+            self._ensure_category_exists(conn, DEFAULT_CATEGORY_TAG)
+            existing_normal = {
+                row["name"]
+                for row in conn.execute("SELECT name FROM normal_tags")
+            }
+            if not existing_normal:
+                self._ensure_category_exists(conn, DEFAULT_CATEGORY_TAG)
+            self._ensure_class_exists(conn, DEFAULT_CLASS_TAG, source="builtin", external_id=None)
+            existing_classes = {
+                row["name"]
+                for row in conn.execute("SELECT name FROM class_tags")
+            }
+            if not existing_classes:
+                self._ensure_class_exists(conn, DEFAULT_CLASS_TAG, source="builtin", external_id=None)
+
+    def _migrate_post_tag_columns(self, conn: sqlite3.Connection) -> None:
+        with conn:
+            rows = conn.execute("SELECT id, category_tag, class_tag FROM posts").fetchall()
+        for row in rows:
+            category = (row["category_tag"] or "").strip()
+            class_tag = (row["class_tag"] or "").strip()
+            if category and class_tag:
+                continue
+            tags_map = self._load_tags_for_posts(conn, [row["id"]])
+            tags = tags_map.get(row["id"], [])
+            resolved_category = category or (tags[0] if tags else DEFAULT_CATEGORY_TAG)
+            resolved_class = class_tag or (tags[1] if len(tags) > 1 else DEFAULT_CLASS_TAG)
+            with conn:
+                self._ensure_category_exists(conn, resolved_category)
+                self._ensure_class_exists(conn, resolved_class, source="migration" if class_tag or tags else "builtin")
+                conn.execute(
+                    "UPDATE posts SET category_tag = ?, class_tag = ? WHERE id = ?",
+                    (resolved_category, resolved_class, row["id"]),
+                )
+
     def add_normal_tag(self, tag: str) -> None:
+        self.add_category_tag(tag)
+
+    def add_category_tag(self, tag: str) -> None:
         conn = self._conn()
         with conn:
             conn.execute("INSERT OR IGNORE INTO normal_tags (name) VALUES (?)", (tag,))
 
     def remove_normal_tag(self, tag: str) -> None:
+        self.remove_category_tag(tag)
+
+    def remove_category_tag(self, tag: str) -> None:
+        name = (tag or "").strip()
+        if not name:
+            raise ValueError("未指定类别标签")
         conn = self._conn()
         with conn:
-            conn.execute("DELETE FROM normal_tags WHERE name = ?", (tag,))
+            affected_posts = [row["id"] for row in conn.execute("SELECT id FROM posts WHERE category_tag = ?", (name,))]
+            self._ensure_category_exists(conn, DEFAULT_CATEGORY_TAG)
+            conn.execute("DELETE FROM normal_tags WHERE name = ?", (name,))
+            conn.execute("UPDATE posts SET category_tag = ? WHERE category_tag = ?", (DEFAULT_CATEGORY_TAG, name))
+            for post_id in affected_posts:
+                tag_rows = conn.execute("SELECT tag FROM post_tags WHERE post_id = ?", (post_id,)).fetchall()
+                tags = [DEFAULT_CATEGORY_TAG] + [row["tag"] for row in tag_rows if row["tag"] != name]
+                self._replace_post_tags(conn, post_id, self._normalize_tags(tags))
+
+    # Class tags ------------------------------------------------------
+
+    def list_class_tags(self, *, with_meta: bool = False, auto_sync: bool = False) -> List[Dict[str, object] | str]:
+        if auto_sync and self._class_sync_enabled:
+            self._maybe_sync_class_tags()
+        conn = self._conn()
+        rows = conn.execute(
+            "SELECT name, source, external_id FROM class_tags ORDER BY source, name"
+        ).fetchall()
+        if with_meta:
+            return [
+                {
+                    "name": row["name"],
+                    "source": row["source"] if "source" in row.keys() else "manual",
+                    "external_id": row["external_id"],
+                }
+                for row in rows
+            ]
+        return [row["name"] for row in rows]
+
+    def add_class_tag(self, tag: str, *, source: str = "manual", external_id: str | None = None) -> None:
+        name = (tag or "").strip()
+        if not name:
+            raise ValueError("标签名称不能为空")
+        conn = self._conn()
+        with conn:
+            conn.execute(
+                """
+                INSERT INTO class_tags (name, source, external_id)
+                VALUES (?, ?, ?)
+                ON CONFLICT(name) DO UPDATE SET source = excluded.source, external_id = excluded.external_id
+                """,
+                (name, source, external_id),
+            )
+
+    def remove_class_tag(self, tag: str) -> None:
+        name = (tag or "").strip()
+        if not name:
+            raise ValueError("未指定班级标签")
+        conn = self._conn()
+        with conn:
+            affected_posts = [row["id"] for row in conn.execute("SELECT id FROM posts WHERE class_tag = ?", (name,))]
+            self._ensure_class_exists(conn, DEFAULT_CLASS_TAG)
+            conn.execute("DELETE FROM class_tags WHERE name = ?", (name,))
+            conn.execute("UPDATE posts SET class_tag = ? WHERE class_tag = ?", (DEFAULT_CLASS_TAG, name))
+            for post_id in affected_posts:
+                tag_rows = conn.execute("SELECT tag FROM post_tags WHERE post_id = ?", (post_id,)).fetchall()
+                tags = [DEFAULT_CLASS_TAG] + [row["tag"] for row in tag_rows if row["tag"] != name]
+                self._replace_post_tags(conn, post_id, self._normalize_tags(tags))
+
+    def _maybe_sync_class_tags(self) -> None:
+        now = time.time()
+        if now - self._last_class_sync < self._class_sync_interval:
+            return
+        with self._class_sync_lock:
+            if now - self._last_class_sync < self._class_sync_interval:
+                return
+            try:
+                self.sync_class_tags_from_oj()
+            except OJServiceUnavailable as exc:
+                self._logger.debug("skip class tag sync: %s", exc)
+            finally:
+                self._last_class_sync = time.time()
+
+    def sync_class_tags_from_oj(self) -> Dict[str, int]:
+        groups = self._oj_client.fetch_groups()
+        conn = self._conn()
+        with conn:
+            existing_rows = conn.execute(
+                "SELECT name, source, external_id FROM class_tags"
+            ).fetchall()
+        existing_by_ext = {
+            row["external_id"]: row for row in existing_rows if row["external_id"]
+        }
+        existing_by_name = {row["name"]: row for row in existing_rows}
+        added = 0
+        updated = 0
+        removed = 0
+        seen_ext: set[str] = set()
+        with conn:
+            for group in groups:
+                gid = str(group.get("id") or "").strip() or None
+                name = str(group.get("name") or "").strip()
+                if not name:
+                    continue
+                if name in existing_by_name and existing_by_name[name]["source"] not in {"oj", "builtin"}:
+                    # 保留手动创建的同名标签，避免覆盖管理员数据。
+                    continue
+                if gid and gid in existing_by_ext:
+                    current = existing_by_ext[gid]
+                    if current["name"] != name:
+                        conn.execute("DELETE FROM class_tags WHERE name = ?", (current["name"],))
+                        added += 1
+                    else:
+                        updated += 1
+                else:
+                    added += 1
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO class_tags (name, source, external_id)
+                    VALUES (?, 'oj', ?)
+                    """,
+                    (name, gid),
+                )
+                if gid:
+                    seen_ext.add(gid)
+            stale = [
+                row["name"]
+                for row in existing_rows
+                if row["source"] == "oj" and row["external_id"] and row["external_id"] not in seen_ext
+            ]
+            if stale:
+                removed = len(stale)
+                conn.executemany("DELETE FROM class_tags WHERE name = ?", [(name,) for name in stale])
+        return {"added": added, "updated": updated, "removed": removed}
 
     # Tag tree ---------------------------------------------------------
 
@@ -1040,7 +1357,7 @@ class DataStore:
         placeholders = ",".join(["?"] * len(tags))
         rows = conn.execute(
             f"""
-            SELECT p.id, p.author, p.title, p.content, p.created_at, p.updated_at
+            SELECT p.id, p.author, p.title, p.content, p.created_at, p.updated_at, p.category_tag, p.class_tag
             FROM posts AS p
             JOIN post_tags AS pt ON p.id = pt.post_id
             WHERE pt.tag IN ({placeholders})
@@ -1103,6 +1420,8 @@ class DataStore:
                     "author": row["author"],
                     "title": row["title"],
                     "content": row["content"],
+                    "category_tag": row["category_tag"] or DEFAULT_CATEGORY_TAG,
+                    "class_tag": row["class_tag"] or DEFAULT_CLASS_TAG,
                     "tags": tags_map.get(post_id, []),
                     "created_at": row["created_at"],
                     "updated_at": row["updated_at"],

@@ -5,62 +5,270 @@
     {{ super() }}
     {{ assets.markdown_view_styles() }}
     <style>
-        .search-results-info {
-            margin: 1rem 0;
-            padding: 0.5rem;
-            background: #f5f5f5;
-            border-radius: 4px;
-        }
-        .hidden {
-            display: none;
-        }
-        
-        /* 调整搜索框位置，避免遮挡导航栏 */
-        .search-container {
-            position: absolute;
-            /* top: 80px; 向下移动，避免遮挡导航栏 */
-            top:20px;
-            right: 20px;
-            width: 200px;
-            z-index: 100;
-        }
-        
-        .input-search {
-            width: 100%;
-            padding: 8px 12px;
-            border: 1px solid #ddd;
-            border-radius: 20px;
-            /* background: rgba(218, 218, 218, 0.95); */
-            background: #ddd;
-            font-size: 14px;
-            transition: all 0.3s ease;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        }
-        
-        .input-search:focus {
-            outline: none;
-            border-color: #6c5ce7;
-            box-shadow: 0 0 0 2px rgba(108, 92, 231, 0.1);
-            background: white;
-        }
-        
-        /* 调整hero部分的布局，为搜索框留出空间 */
-        .hero.card {
+        .home-hero {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 28px 32px;
+            background: linear-gradient(135deg, #0f172a, #0ea5e9);
+            color: #eef6ff;
+            border: none;
+            box-shadow: 0 14px 32px rgba(15, 23, 42, 0.25);
+            overflow: hidden;
             position: relative;
-            padding-right: 240px;
-            margin-top: 20px; /* 为搜索框留出更多空间 */
+            border-radius: 18px;
         }
-        
-        /* 移动设备适配 */
-        @media (max-width: 768px) {
-            .search-container {
-                position: static;
-                width: 100%;
-                margin: 10px 0;
+
+        .home-hero::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at 20% 20%, rgba(255,255,255,0.08), transparent 35%),
+                        radial-gradient(circle at 80% 0%, rgba(255,255,255,0.12), transparent 30%);
+            pointer-events: none;
+        }
+
+        .home-hero .hero-text {
+            max-width: 540px;
+            position: relative;
+            z-index: 1;
+        }
+
+        .home-hero h1 {
+            font-size: 28px;
+            margin-bottom: 8px;
+            letter-spacing: 0.01em;
+        }
+
+        .home-hero p {
+            opacity: 0.92;
+            line-height: 1.6;
+            margin-bottom: 16px;
+        }
+
+        .hero-actions {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .home-grid {
+            display: grid;
+            grid-template-columns: 320px 1fr;
+            gap: 20px;
+            align-items: start;
+        }
+
+        .filter-panel {
+            position: sticky;
+            top: 96px;
+            border: none;
+            box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+            background: linear-gradient(180deg, #f8fafc, #ffffff);
+        }
+
+        .filter-title {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: #0f172a;
+        }
+
+        .filter-form {
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+
+        .tag-pill-grid,
+        .chip-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .tag-pill,
+        .chip-option {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 12px;
+            border-radius: 999px;
+            background: #e2e8f0;
+            color: #0f172a;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: 1px solid transparent;
+        }
+
+        .tag-pill:hover,
+        .chip-option:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);
+        }
+
+        .tag-pill input,
+        .chip-option input {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        .tag-pill input:checked + span,
+        .chip-option input:checked + span {
+            color: #0ea5e9;
+        }
+
+        .tag-pill input:checked ~ .pill-sheen,
+        .chip-option input:checked ~ .pill-sheen {
+            opacity: 1;
+        }
+
+        .pill-sheen {
+            position: absolute;
+            inset: 0;
+            border-radius: 999px;
+            border: 1px solid #0ea5e9;
+            box-shadow: 0 0 0 4px rgba(14, 165, 233, 0.15);
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+
+        .pill-badge {
+            background: rgba(14, 165, 233, 0.14);
+            color: #0369a1;
+            font-size: 12px;
+            padding: 3px 8px;
+            border-radius: 999px;
+            border: 1px solid rgba(3, 105, 161, 0.2);
+            line-height: 1;
+        }
+
+        .filter-actions {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            justify-content: flex-start;
+        }
+
+        .filter-actions .button {
+            width: auto;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 12px 14px;
+            border-radius: 14px;
+            border: 1px solid #e2e8f0;
+            background: #f8fafc;
+            transition: all 0.2s ease;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #0ea5e9;
+            background: #fff;
+            box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.15);
+        }
+
+        .post-feed {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .post-card {
+            border: none;
+            box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
+        }
+
+        .post-card header {
+            margin-bottom: 10px;
+        }
+
+        .post-badges {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 6px;
+            flex-wrap: wrap;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 10px;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.02em;
+        }
+
+        .badge.category {
+            background: rgba(236, 72, 153, 0.12);
+            color: #be185d;
+        }
+
+        .badge.class {
+            background: rgba(14, 165, 233, 0.14);
+            color: #0369a1;
+        }
+
+        .badge.meta {
+            background: #0f172a;
+            color: #e2e8f0;
+        }
+
+        .post-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            color: #475569;
+            font-weight: 600;
+        }
+
+        .post-meta span {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .post-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-top: 8px;
+        }
+
+        .favorite-chip {
+            background: #0f172a;
+            color: #e2e8f0;
+            padding: 6px 12px;
+            border-radius: 999px;
+            font-weight: 700;
+        }
+
+        .empty-highlight {
+            text-align: center;
+            padding: 28px;
+            border: 1px dashed #cbd5e1;
+            border-radius: 12px;
+            background: #f8fafc;
+        }
+
+        @media (max-width: 1024px) {
+            .home-grid {
+                grid-template-columns: 1fr;
             }
-            
-            .hero.card {
-                padding-right: 0;
+            .filter-panel {
+                position: relative;
+                top: 0;
             }
         }
     </style>
@@ -70,368 +278,119 @@
     {{ assets.markdown_view_scripts() }}
 {% endblock %}
 {% block content %}
-<!-- 搜索框移动到右上角，但避免遮挡导航栏 -->
-
-
-<section class="hero card">
-    <div class="search-container">
-        <input type="text" id="searchInput" class="input-search" placeholder="输入搜索关键字">
-    </div>
-    <div class="hero-content">
-        <h1>最新文章</h1>
-        <p>探索同学们的灵感与观点，博客现已全面支持 Markdown 排版。</p>
-        {% if current_user.is_authenticated %}
-            <a class="button primary" href="{{ url_for('blog.create') }}">写新文章</a>
-        {% else %}
-            <a class="button primary" href="{{ url_for('auth.login', next=request.path) }}">登录后创作</a>
-        {% endif %}
-    </div>
-    {% if normal_tags %}
-        <div class="hero-tags">
-            <h2>常用标签</h2>
-            <div class="tag-list">
-                {% for tag in normal_tags %}
-                    <span class="tag-chip">{{ tag }}</span>
-                {% endfor %}
-            </div>
-            <a class="link-more" href="{{ url_for('tag.tree_view') }}">查看标签全览 →</a>
+<section class="home-hero card">
+    <div class="hero-text">
+        <h1>精选校园创作</h1>
+        <p>从技术分享到社团故事，在这里找到属于你的灵感。左侧筛选班级和类别，即刻发现同好作品。</p>
+        <div class="hero-actions">
+            {% if current_user.is_authenticated %}
+                <a class="button primary" href="{{ url_for('blog.create') }}">写新文章</a>
+                <a class="button ghost" href="{{ url_for('blog.user_profile', username=current_user.username) }}">我的主页</a>
+            {% else %}
+                <a class="button primary" href="{{ url_for('auth.login', next=request.path) }}">登录后创作</a>
+            {% endif %}
         </div>
-    {% endif %}
+    </div>
+    <div class="hero-actions">
+        <div class="badge meta">文章 {{ posts | length }}</div>
+        <div class="badge meta">类别 {{ category_tags | length }}</div>
+        <div class="badge meta">班级标签 {{ class_tags | length }}</div>
+    </div>
 </section>
 
-<section>
-    <script type="application/ld+json" id="datas">
-    {{ posts | tojson }}
-    </script>
-    
-    <!-- 搜索信息显示区域 -->
-    <div id="searchResultsInfo" class="search-results-info hidden"></div>
-</section>
+<div class="home-grid">
+    <aside class="filter-panel card">
+        <form method="get" class="filter-form">
+            <div class="filter-group">
+                <div class="filter-title">
+                    <span>班级标签</span>
+                    <small class="muted-text">可多选，不选则不过滤</small>
+                </div>
+                <div class="tag-pill-grid">
+                    {% for tag in class_tags %}
+                        {% set name = tag.name if tag.name is defined else tag['name'] %}
+                        {% set source = tag.source if tag.source is defined else tag['source'] %}
+                        <label class="tag-pill">
+                            <input type="checkbox" name="class_tag" value="{{ name }}" {% if name in filters.class_tags %}checked{% endif %}>
+                            <span>{{ name }}</span>
+                            {% if source == 'oj' %}
+                                <span class="pill-badge">OJ 同步</span>
+                            {% elif source == 'builtin' %}
+                                <span class="pill-badge">默认</span>
+                            {% endif %}
+                            <span class="pill-sheen"></span>
+                        </label>
+                    {% else %}
+                        <p class="muted-text">暂无班级标签，可在后台添加或同步 OJ 小组。</p>
+                    {% endfor %}
+                </div>
+            </div>
 
-<section class="post-list">
-    <!-- 原始文章列表 -->
-    <!-- <div id="originalPosts">
+            <div class="filter-group">
+                <div class="filter-title">
+                    <span>类别</span>
+                    <small class="muted-text">单选，空则不过滤</small>
+                </div>
+                <div class="chip-grid">
+                    <label class="chip-option">
+                        <input type="radio" name="category" value="" {% if not filters.category %}checked{% endif %}>
+                        <span>全部类别</span>
+                        <span class="pill-sheen"></span>
+                    </label>
+                    {% for tag in category_tags %}
+                        <label class="chip-option">
+                            <input type="radio" name="category" value="{{ tag }}" {% if filters.category == tag %}checked{% endif %}>
+                            <span>{{ tag }}</span>
+                            <span class="pill-sheen"></span>
+                        </label>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="filter-group">
+                <div class="filter-title">
+                    <span>关键词</span>
+                </div>
+                <input class="search-input" type="search" name="q" value="{{ filters.keyword }}" placeholder="标题、正文或标签关键字">
+            </div>
+
+            <div class="filter-actions">
+                <button type="submit" class="button primary">应用筛选</button>
+                <a class="button ghost" href="{{ url_for('blog.index') }}">清除条件</a>
+            </div>
+        </form>
+    </aside>
+
+    <section class="post-feed">
         {% if posts %}
             {% for post in posts %}
-                <article class="post-card card" data-post-id="{{ post['id'] }}">
+                <article class="post-card card">
                     <header>
+                        <div class="post-badges">
+                            <span class="badge category">类别 · {{ post['category_tag'] }}</span>
+                            <span class="badge class">班级 · {{ post['class_tag'] }}</span>
+                        </div>
                         <h2><a href="{{ url_for('blog.detail', post_id=post['id']) }}">{{ post['title'] }}</a></h2>
                         <div class="post-meta">
-                            <span>
-                                作者：
-                                <a href="{{ url_for('blog.user_profile', username=post['author_username']) }}">
-                                    {% if post['author_real_name'] %}
-                                        {{ post['author_real_name'] }}（{{ post['author_username'] }}）
-                                    {% else %}
-                                        {{ post['author_username'] }}
-                                    {% endif %}
-                                </a>
-                            </span>
-                            <span>发布：{{ post['created_at'] }}</span>
-                            <span>更新：{{ post['updated_at'] }}</span>
+                            <span>作者：<a href="{{ url_for('blog.user_profile', username=post['author_username']) }}">{{ post['author_display'] }}</a></span>
+                            <span>发布：{{ post['created_at'] | friendly_time }}</span>
+                            <span>更新：{{ post['updated_at'] | friendly_time }}</span>
                         </div>
                     </header>
-                    {% if post['tags'] %}
-                        <div class="post-tags">
-                            {% for tag in post['tags'] %}
-                                <span class="tag-badge">{{ tag }}</span>
-                            {% endfor %}
-                        </div>
-                    {% endif %}
                     <div class="post-excerpt markdown-body clamp-4">
                         {{ post['content'] | markdown }}
                     </div>
                     <div class="post-footer">
                         <a class="link-more" href="{{ url_for('blog.detail', post_id=post['id']) }}">阅读全文</a>
-                        {% if current_user.is_authenticated and (current_user.is_admin or post['author_username'] == current_user.username) %}
-                            <div class="post-shortcuts">
-                                <a href="{{ url_for('blog.edit', post_id=post['id']) }}">编辑</a>
-                            </div>
-                        {% endif %}
+                        <span class="favorite-chip">收藏 {{ post['favorite_count'] }}</span>
                     </div>
                 </article>
             {% endfor %}
         {% else %}
-            <p class="empty-state">还没有文章，成为第一位作者吧！</p>
+            <div class="empty-highlight">
+                <p class="muted-text">还没有符合条件的文章，试试调整筛选或发布第一篇吧。</p>
+            </div>
         {% endif %}
-    </div> -->
-    
-    <!-- 搜索结果容器 -->
-    <div id="searchResults" class="hidden"></div>
-</section>
-
-<script>
-    // 工具函数
-var HtmlUtil = {
-    htmlEncode: function(html) {
-        var tempDiv = document.createElement('div');
-        (tempDiv.textContent != undefined) ? (tempDiv.textContent = html) : (tempDiv.innerText = html);
-        var output = tempDiv.innerHTML;
-        tempDiv = null;
-        return output;
-    },
-    
-    htmlDecode: function(text) {
-        var tempDiv = document.createElement('div');
-        tempDiv.innerHTML = text;
-        var output = tempDiv.innerText || tempDiv.textContent;
-        tempDiv = null;
-        return output;
-    }
-};
-
-// 搜索功能
-class PostSearch {
-constructor() {
-    // this.originalPosts = document.getElementById('originalPosts');
-    this.searchResults = document.getElementById('searchResults');
-    this.searchInfo = document.getElementById('searchResultsInfo');
-    this.searchInput = document.getElementById('searchInput');
-    
-    this.allPosts = this.loadPostsData();
-    
-    // 立即执行空搜索
-    this.displayAllPosts();
-    
-    this.bindEvents();
-}
-    
-    // 加载文章数据
-    loadPostsData() {
-        try {
-            const postsElement = document.getElementById("datas");
-            if (!postsElement) {
-                console.error('找不到文章数据元素');
-                return [];
-            }
-            
-            const posts = HtmlUtil.htmlDecode(postsElement.innerHTML);
-            return JSON.parse(posts);
-        } catch (error) {
-            console.error('加载文章数据失败:', error);
-            return [];
-        }
-    }
-    
-    // 绑定事件
-    bindEvents() {
-        // 移除按钮事件，只保留输入事件
-        this.searchInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                this.performSearch();
-            }
-        });
-        
-        // 添加输入时实时搜索
-        this.searchInput.addEventListener('input', () => {
-            clearTimeout(this.searchTimeout);
-            this.searchTimeout = setTimeout(() => {
-                this.performSearch();
-            }, 300);
-        });
-    }
-    
-    // 执行搜索
-    performSearch() {
-        const keyword = this.searchInput.value.trim();
-        
-        // 如果关键词为空，显示所有文章
-        if (!keyword) {
-            this.displayAllPosts();
-            return;
-        }
-        
-        const results = this.searchPosts(keyword);
-        this.displayResults(results, keyword);
-    }
-    
-// 显示所有文章
-displayAllPosts() {
-    // 隐藏原始列表，显示结果容器
-    // this.originalPosts.classList.add('hidden');
-    this.searchResults.classList.remove('hidden');
-    
-    // 隐藏搜索信息区域
-    this.searchInfo.classList.add('hidden');
-    
-    // 生成所有文章的HTML
-    if (this.allPosts.length === 0) {
-        this.searchResults.innerHTML = '<p class="empty-state">还没有文章，成为第一位作者吧！</p>';
-    } else {
-        this.searchResults.innerHTML = this.allPosts.map(post => this.generatePostHTML(post, '')).join('');
-    }
-}
-    
-    // 搜索文章
-    searchPosts(keyword) {
-        const lowerKeyword = keyword.toLowerCase();
-        
-        return this.allPosts.filter(item => {
-            if (!item) return false;
-            
-            const searchFields = [
-                item.title,
-                item.content,
-                item.author_username,
-                item.author_real_name
-            ];
-            
-            return searchFields.some(field => 
-                field && field.toLowerCase().includes(lowerKeyword)
-            );
-        });
-    }
-    
-    // 显示搜索结果
-    displayResults(results, keyword) {
-        // 隐藏原始列表，显示结果容器
-        // this.originalPosts.classList.add('hidden');
-        this.searchResults.classList.remove('hidden');
-        this.searchInfo.classList.remove('hidden');
-        
-        // 更新搜索结果信息
-        const resultText = results.length === 1 ? '篇' : '篇';
-        this.searchInfo.innerHTML = `找到 ${results.length} ${resultText}与"<strong>${this.escapeHtml(keyword)}</strong>"相关的文章`;
-        
-        // 生成搜索结果HTML
-        if (results.length === 0) {
-            this.searchResults.innerHTML = '<p class="empty-state">没有找到相关文章，请尝试其他关键词</p>';
-        } else {
-            this.searchResults.innerHTML = results.map(post => this.generatePostHTML(post, keyword)).join('');
-        }
-    }
-    
-    // 生成文章HTML（带高亮）
-    generatePostHTML(post, keyword) {
-        // 高亮处理函数
-        const highlightText = (text) => {
-            if (!text || !keyword) return this.escapeHtml(text);
-
-            const regex = new RegExp(`(${this.escapeRegex(keyword)})`, 'gi');
-            return this.escapeHtml(text).replace(regex, '<mark class="search-highlight">$1</mark>');
-        };
-        const favoriteCount = typeof post.favorite_count === 'number' ? post.favorite_count : 0;
-        const favoriteSuffix = post.is_favorited ? ' · 已收藏' : '';
-        
-        // 生成标签HTML
-        const tagsHTML = post.tags && post.tags.length > 0 ? 
-            `<div class="post-tags">
-                ${post.tags.map(tag => `<span class="tag-badge">${this.escapeHtml(tag)}</span>`).join('')}
-            </div>` : '';
-        
-        // 处理作者显示
-        let authorDisplay = post.author_username;
-        if (post.author_real_name) {
-            authorDisplay = `${post.author_real_name} (${post.author_username})`;
-        }
-        
-        return `
-            <article class="post-card card" data-post-id="${post.id}">
-                <header>
-                    <h2><a href="/post/${post.id}" target="_blank">${highlightText(post.title)}</a></h2>
-                    <div class="post-meta">
-                        <span>作者：<a style = "color:#a29bfe" href="/blog/user/${post.author_username}">${highlightText(authorDisplay)}</a></span>
-                        <span>发布：${post.created_at}</span>
-                        <span>更新：${post.updated_at}</span>
-                    </div>
-                </header>
-                ${tagsHTML}
-                <div class="post-excerpt markdown-body clamp-4">
-                    ${this.generateContentExcerpt(post.content, keyword)}
-                </div>
-                <div class="post-footer">
-                    <a class="link-more" href="/post/${post.id}">阅读全文</a>
-                    <div class="post-shortcuts">
-                        <span class="favorite-count">收藏：${favoriteCount}${favoriteSuffix}</span>
-                    </div>
-                </div>
-            </article>
-        `;
-    }
-    
-    // 生成内容摘要（安全处理）
-    generateContentExcerpt(content, keyword, maxLength = 200) {
-        if (!content) return '';
-        
-        // 转换为纯文本
-        const tempDiv = document.createElement('div');
-        tempDiv.innerHTML = content;
-        const plainText = tempDiv.textContent || tempDiv.innerText || '';
-        
-        // 查找关键词位置
-        const lowerText = plainText.toLowerCase();
-        const lowerKeyword = keyword.toLowerCase();
-        const keywordIndex = lowerText.indexOf(lowerKeyword);
-        
-        let excerpt = '';
-        if (keywordIndex !== -1) {
-            // 以关键词为中心截取
-            const start = Math.max(0, keywordIndex - 50);
-            const end = Math.min(plainText.length, keywordIndex + keyword.length + 50);
-            excerpt = plainText.substring(start, end);
-            
-            if (start > 0) excerpt = '...' + excerpt;
-            if (end < plainText.length) excerpt = excerpt + '...';
-        } else {
-            // 普通截取
-            excerpt = plainText.length > maxLength ? 
-                plainText.substring(0, maxLength) + '...' : 
-                plainText;
-        }
-        
-        // 高亮关键词
-        const regex = new RegExp(`(${this.escapeRegex(keyword)})`, 'gi');
-        return this.escapeHtml(excerpt).replace(regex, '<mark class="search-highlight">$1</mark>');
-    }
-    
-    // 工具方法
-    escapeHtml(unsafe) {
-        if (!unsafe) return '';
-        return unsafe
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#039;");
-    }
-    
-    escapeRegex(string) {
-        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    }
-}
-
-// 页面加载完成后初始化
-document.addEventListener('DOMContentLoaded', function() {
-    new PostSearch();
-});
-
-</script>
-
-<style>
-    .search-highlight {
-    background-color: #ffeb3b;
-    color: #000;
-    border-radius: 1px;
-    font-weight: bold;
-}
-
-.search-results-info {
-    margin: 1.5rem 0;
-    padding: 16px 20px;
-    background: linear-gradient(135deg, #6c5ce7, #a29bfe);
-    color: white;
-    border-radius: 8px;
-    text-align: center;
-    font-size: 1.1em;
-    font-weight: 600;
-    box-shadow: 0 4px 12px rgba(108, 92, 231, 0.3);
-    border-left: 4px solid #ffd32a;
-    position: relative;
-    overflow: hidden;
-}
-
-.hidden {
-    display: none !important;
-}
-</style>
+    </section>
+</div>
 {% endblock %}

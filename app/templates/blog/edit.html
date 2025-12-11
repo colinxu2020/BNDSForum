@@ -5,6 +5,59 @@
     {{ super() }}
     {{ assets.markdown_view_styles() }}
     {{ assets.markdown_editor_styles() }}
+    <style>
+        .choice-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        .chip-option {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 12px;
+            border-radius: 12px;
+            background: #f1f5f9;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: 1px solid transparent;
+        }
+        .chip-option:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);
+        }
+        .chip-option input {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            cursor: pointer;
+        }
+        .chip-option input:checked + span {
+            color: #0ea5e9;
+        }
+        .chip-option .pill-sheen {
+            position: absolute;
+            inset: 0;
+            border-radius: 12px;
+            border: 1px solid #0ea5e9;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        .chip-option input:checked ~ .pill-sheen {
+            opacity: 1;
+        }
+        .pill-badge {
+            background: rgba(14, 165, 233, 0.14);
+            color: #0369a1;
+            font-size: 12px;
+            padding: 3px 8px;
+            border-radius: 999px;
+            border: 1px solid rgba(3, 105, 161, 0.2);
+            line-height: 1;
+        }
+    </style>
 {% endblock %}
 {% block extra_scripts %}
     {{ super() }}
@@ -55,6 +108,43 @@
             </div>
         </div>
 
+        <div class="form-field">
+            <label>类别标签（单选）</label>
+            <div class="choice-grid">
+                {% for tag in category_tags %}
+                    <label class="chip-option">
+                        <input type="radio" name="category_tag" value="{{ tag }}" {% if tag == selected_category %}checked{% endif %}>
+                        <span>{{ tag }}</span>
+                        <span class="pill-sheen"></span>
+                    </label>
+                {% else %}
+                    <p class="muted-text">暂无类别标签，请先在后台添加。</p>
+                {% endfor %}
+            </div>
+        </div>
+
+        <div class="form-field">
+            <label>班级标签（单选）</label>
+            <div class="choice-grid">
+                {% for tag in class_tags %}
+                    {% set name = tag.name if tag.name is defined else tag['name'] %}
+                    {% set source = tag.source if tag.source is defined else tag['source'] %}
+                    <label class="chip-option">
+                        <input type="radio" name="class_tag" value="{{ name }}" {% if name == selected_class %}checked{% endif %}>
+                        <span>{{ name }}</span>
+                        {% if source == 'oj' %}
+                            <span class="pill-badge">OJ 同步</span>
+                        {% elif source == 'builtin' %}
+                            <span class="pill-badge">默认</span>
+                        {% endif %}
+                        <span class="pill-sheen"></span>
+                    </label>
+                {% else %}
+                    <p class="muted-text">暂无班级标签，请在后台同步或创建。</p>
+                {% endfor %}
+            </div>
+        </div>
+
         {% set constant_list = author_constant_tags if author_constant_tags is defined else current_user.constant_tags %}
         <div class="form-field">
             <label>自动附加标签</label>
@@ -65,11 +155,12 @@
                     <span class="tag-badge muted">暂无固定标签</span>
                 {% endfor %}
             </div>
+            <p class="field-hint">系统会自动附加上方固定标签，无需手动选择。</p>
         </div>
 
         {% if extra_tags is defined and extra_tags %}
             <div class="form-field">
-                <label>作者自定义标签</label>
+                <label>额外附加标签</label>
                 <div class="tag-collection">
                     {% for tag in extra_tags %}
                         <span class="tag-badge">{{ tag }}</span>
@@ -77,16 +168,6 @@
                 </div>
             </div>
         {% endif %}
-
-        <div class="form-field">
-            <label for="normal_tags">选择常用标签</label>
-            <select id="normal_tags" name="normal_tags" multiple size="8">
-                {% for tag in available_tags %}
-                    <option value="{{ tag }}" {% if tag in selected_tags %}selected{% endif %}>{{ tag }}</option>
-                {% endfor %}
-            </select>
-            <p class="field-hint">按住 Ctrl 或 Command 键可多选标签。</p>
-        </div>
 
         <div class="form-actions">
             <button type="submit" class="button primary">保存</button>

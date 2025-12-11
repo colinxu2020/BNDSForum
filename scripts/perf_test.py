@@ -256,7 +256,7 @@ class PerformanceTest:
     def _build_operations(self) -> List[Operation]:
         return [
             Operation("view_index", self.op_view_index, weight=4, description="访问首页"),
-            Operation("view_tags", self.op_view_tags, weight=2, description="访问标签树"),
+            Operation("view_filters", self.op_view_filters, weight=2, description="使用筛选面板浏览"),
             Operation("view_post_detail", self.op_view_post_detail, weight=4, description="查看文章详情"),
             Operation("login_flow", self.op_login_flow, weight=2, description="完整登录流程"),
             Operation("create_post", self.op_create_post, weight=3, description="创建新文章"),
@@ -356,11 +356,15 @@ class PerformanceTest:
 
     def op_view_index(self, worker: Worker) -> bool:
         resp = worker.session.get(f"{self.base_url}/", timeout=self.timeout)
-        return resp.status_code == 200 and "最新文章" in resp.text
+        return resp.status_code == 200 and "精选校园创作" in resp.text
 
-    def op_view_tags(self, worker: Worker) -> bool:
-        resp = worker.session.get(f"{self.base_url}/tags/", timeout=self.timeout)
-        return resp.status_code == 200 and "标签" in resp.text
+    def op_view_filters(self, worker: Worker) -> bool:
+        resp = worker.session.get(
+            f"{self.base_url}/",
+            params={"category": "", "class_tag": "", "q": "测试"},
+            timeout=self.timeout,
+        )
+        return resp.status_code == 200 and "班级标签" in resp.text
 
     def op_view_post_detail(self, worker: Worker) -> bool:
         post = self.shared_state.get_random_post()

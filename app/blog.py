@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from datetime import datetime, timezone
 from typing import Dict, Optional, Set, Tuple
 
 from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
@@ -12,7 +13,12 @@ from markdown_it.token import Token
 from mdit_py_plugins.container import container_plugin
 from mdit_py_plugins.tasklists import tasklists_plugin
 
-from .datastore import DataStore
+from .datastore import (
+    DEFAULT_CATEGORY_TAG,
+    DEFAULT_CLASS_TAG,
+    ISO_FORMAT,
+    DataStore,
+)
 
 
 bp = Blueprint("blog", __name__)
@@ -134,6 +140,45 @@ def render_markdown(value: str | None) -> Markup:
     return Markup(html)
 
 
+def _parse_iso_date(value: str) -> datetime | None:
+    try:
+        parsed = datetime.strptime(value, ISO_FORMAT)
+    except (ValueError, TypeError):
+        return None
+    return parsed.replace(tzinfo=timezone.utc)
+
+
+def _relative_time_label(dt: datetime) -> str:
+    now = datetime.now(timezone.utc)
+    delta = now - dt
+    seconds = abs(delta.total_seconds())
+    if seconds < 60:
+        value, unit = int(seconds), "秒"
+    elif seconds < 3600:
+        value, unit = int(seconds // 60), "分钟"
+    elif seconds < 86400:
+        value, unit = int(seconds // 3600), "小时"
+    elif seconds < 86400 * 30:
+        value, unit = int(seconds // 86400), "天"
+    else:
+        return ""
+    suffix = "前" if delta.total_seconds() >= 0 else "后"
+    return f"{value}{unit}{suffix}"
+
+
+@bp.app_template_filter("friendly_time")
+def friendly_time(value: str | None) -> str:
+    if not value:
+        return ""
+    parsed = _parse_iso_date(value)
+    if not parsed:
+        return value
+    local_dt = parsed.astimezone()
+    base = local_dt.strftime("%Y-%m-%d %H:%M")
+    relative = _relative_time_label(parsed)
+    return f"{base} · {relative}" if relative else base
+
+
 def get_datastore() -> DataStore:
     return current_app.extensions["datastore"]
 
@@ -154,6 +199,8 @@ def _decorate_post(
     decorated["author_real_name"] = record.get("real_name", "") if record else ""
     decorated["author_display"] = decorated["author_real_name"] or decorated["author_username"]
     decorated["author_constant_tags"] = record.get("constant_tags", []) if record else []
+    decorated["category_tag"] = post.get("category_tag") or DEFAULT_CATEGORY_TAG
+    decorated["class_tag"] = post.get("class_tag") or DEFAULT_CLASS_TAG
     decorated["favorite_count"] = post.get("favorite_count", 0)
     if favorite_post_ids is not None:
         decorated["is_favorited"] = post.get("id") in favorite_post_ids
@@ -173,8 +220,47 @@ def _decorate_comment(comment: dict, user_map: dict[str, dict[str, object]]) -> 
 @bp.route("/")
 def index():
     datastore = get_datastore()
+    category_tags = datastore.list_category_tags()
+    class_tags_meta = datastore.list_class_tags(with_meta=True, auto_sync=True)
+    category_lookup = {tag.lower(): tag for tag in category_tags}
+    class_lookup = {item["name"].lower(): item["name"] for item in class_tags_meta if isinstance(item, dict)}
+
+    selected_category = (request.args.get("category") or "").strip()
+    if selected_category:
+        selected_category = category_lookup.get(selected_category.lower(), "")
+    raw_class_params = request.args.getlist("class_tag") or request.args.getlist("class")
+    selected_class_tags: list[str] = []
+    seen_classes: set[str] = set()
+    for item in raw_class_params:
+        lowered = item.strip().lower()
+        if not lowered or lowered in seen_classes:
+            continue
+        matched = class_lookup.get(lowered)
+        if matched:
+            selected_class_tags.append(matched)
+            seen_classes.add(lowered)
+
     user_map = _user_lookup(datastore)
-    raw_posts = datastore.list_posts()
+    raw_posts = datastore.list_posts_filtered(
+        category_tag=selected_category or None,
+        class_tags=selected_class_tags or None,
+    )
+    keyword = (request.args.get("q") or "").strip()
+    if keyword:
+        lowered = keyword.lower()
+        filtered = []
+        for post in raw_posts:
+            haystacks = [
+                post.get("title", ""),
+                post.get("content", ""),
+                post.get("category_tag", ""),
+                post.get("class_tag", ""),
+                " ".join(post.get("tags", [])),
+            ]
+            if any(lowered in (text or "").lower() for text in haystacks):
+                filtered.append(post)
+        raw_posts = filtered
+
     favorite_post_ids: Set[str] = set()
     if current_user.is_authenticated:
         favorite_post_ids = datastore.favorite_post_ids(
@@ -182,11 +268,16 @@ def index():
             [post["id"] for post in raw_posts],
         )
     posts = [_decorate_post(post, user_map, favorite_post_ids) for post in raw_posts]
-    normal_tags = datastore.list_normal_tags()
     return render_template(
         "blog/index.html",
         posts=posts,
-        normal_tags=normal_tags,
+        category_tags=category_tags,
+        class_tags=class_tags_meta,
+        filters={
+            "category": selected_category,
+            "class_tags": selected_class_tags,
+            "keyword": keyword,
+        },
     )
 
 
@@ -194,34 +285,59 @@ def index():
 @login_required
 def create():
     datastore = get_datastore()
-    available_tags = datastore.list_normal_tags()
+    category_tags = datastore.list_category_tags()
+    class_tags = datastore.list_class_tags(with_meta=True, auto_sync=True)
+    default_category = category_tags[0] if category_tags else DEFAULT_CATEGORY_TAG
+    default_class = class_tags[0]["name"] if class_tags else DEFAULT_CLASS_TAG
     if request.method == "POST":
         title = request.form.get("title", "").strip()
         content = request.form.get("content", "").strip()
-        selected_tags = request.form.getlist("normal_tags")
-        tags = set(selected_tags) | set(getattr(current_user, "constant_tags", []))
+        selected_category = (request.form.get("category_tag") or "").strip() or default_category
+        selected_class = (request.form.get("class_tag") or "").strip() or default_class
+        category_lookup = {tag.lower(): tag for tag in category_tags}
+        class_lookup = {item["name"].lower(): item["name"] for item in class_tags if isinstance(item, dict)}
+        category_value = category_lookup.get(selected_category.lower(), "")
+        class_value = class_lookup.get(selected_class.lower(), "")
         if not title or not content:
             return render_template(
                 "blog/edit.html",
-                available_tags=available_tags,
-                selected_tags=selected_tags,
+                category_tags=category_tags,
+                class_tags=class_tags,
+                selected_category=selected_category,
+                selected_class=selected_class,
                 title=title,
                 content=content,
                 error="标题和内容不能为空",
+                post_id=None,
+            )
+        if not category_value or not class_value:
+            return render_template(
+                "blog/edit.html",
+                category_tags=category_tags,
+                class_tags=class_tags,
+                selected_category=selected_category,
+                selected_class=selected_class,
+                title=title,
+                content=content,
+                error="请选择有效的类别标签和班级标签",
                 post_id=None,
             )
         datastore.create_post(
             author=current_user.username,
             title=title,
             content=content,
-            tags=tags,
+            category_tag=category_value,
+            class_tag=class_value,
+            author_constant_tags=getattr(current_user, "constant_tags", []),
         )
         flash("文章创建成功", "success")
         return redirect(url_for("blog.index"))
     return render_template(
         "blog/edit.html",
-        available_tags=available_tags,
-        selected_tags=[],
+        category_tags=category_tags,
+        class_tags=class_tags,
+        selected_category=default_category,
+        selected_class=default_class,
         title="",
         content="",
         post_id=None,
@@ -345,33 +461,45 @@ def edit(post_id: str):
         flash("没有权限编辑该文章", "error")
         return redirect(url_for("blog.detail", post_id=post_id))
 
-    available_tags = datastore.list_normal_tags()
+    category_tags = datastore.list_category_tags()
+    class_tags = datastore.list_class_tags(with_meta=True, auto_sync=True)
+    current_category = post.get("category_tag") or (category_tags[0] if category_tags else DEFAULT_CATEGORY_TAG)
+    current_class = post.get("class_tag") or (class_tags[0]["name"] if class_tags else DEFAULT_CLASS_TAG)
     author_record = datastore.get_user(post["author"]) or {}
     author_constant_tags = set(author_record.get("constant_tags", []))
     existing_tags = set(post.get("tags", []))
-    extra_tags = existing_tags - author_constant_tags - set(available_tags)
+    extra_tags = existing_tags - author_constant_tags - {current_category, current_class}
 
     if request.method == "POST":
         title = request.form.get("title", "").strip()
         content = request.form.get("content", "").strip()
-        selected_tags = set(request.form.getlist("normal_tags"))
+        selected_category = (request.form.get("category_tag") or "").strip()
+        selected_class = (request.form.get("class_tag") or "").strip()
+        category_lookup = {tag.lower(): tag for tag in category_tags}
+        class_lookup = {item["name"].lower(): item["name"] for item in class_tags if isinstance(item, dict)}
+        category_value = category_lookup.get(selected_category.lower(), current_category)
+        class_value = class_lookup.get(selected_class.lower(), current_class)
         if not title or not content:
             flash("标题和内容不能为空", "error")
         else:
-            final_tags = author_constant_tags | selected_tags | extra_tags
             datastore.update_post(
                 post_id,
                 title=title,
                 content=content,
-                tags=final_tags,
+                category_tag=category_value,
+                class_tag=class_value,
+                author_constant_tags=author_constant_tags,
             )
             flash("文章已更新", "success")
             return redirect(url_for("blog.detail", post_id=post_id))
-    selected_tags = [tag for tag in post.get("tags", []) if tag in available_tags]
+    selected_category = current_category
+    selected_class = current_class
     return render_template(
         "blog/edit.html",
-        available_tags=available_tags,
-        selected_tags=selected_tags,
+        category_tags=category_tags,
+        class_tags=class_tags,
+        selected_category=selected_category,
+        selected_class=selected_class,
         title=post.get("title", ""),
         content=post.get("content", ""),
         post_id=post_id,

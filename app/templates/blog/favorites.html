@@ -20,14 +20,19 @@
             {% for post in posts %}
                 <article class="post-card card">
                     <header>
+                        <div class="post-tags">
+                            <span class="tag-badge">{{ post['category_tag'] }}</span>
+                            <span class="tag-badge">{{ post['class_tag'] }}</span>
+                        </div>
                         <h2><a href="{{ url_for('blog.detail', post_id=post['id']) }}">{{ post['title'] }}</a></h2>
                         <div class="post-meta">
-                            <span>收藏于：{{ post['favorited_at'] }}</span>
+                            <span>收藏于：{{ post['favorited_at'] | friendly_time }}</span>
                             <span>作者：
                                 <a href="{{ url_for('blog.user_profile', username=post['author_username']) }}">
                                     {{ post['author_display'] }}
                                 </a>
                             </span>
+                            <span>更新：{{ post['updated_at'] | friendly_time }}</span>
                             <span>总收藏：{{ post['favorite_count'] }}</span>
                         </div>
                     </header>
