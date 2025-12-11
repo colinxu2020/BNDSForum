@@ -1600,10 +1600,17 @@ class DataStore:
         updated = 0
         removed = 0
         seen_ext: set[str] = set()
+        seen_names: set[str] = set()
         with conn:
             for group in groups:
-                gid = str(group.get("id") or "").strip() or None
-                name = str(group.get("name") or "").strip()
+                if isinstance(group, dict):
+                    gid_raw = group.get("external_id") or group.get("id")
+                    name_raw = group.get("display_name") or group.get("name") or group.get("tag")
+                else:
+                    gid_raw = getattr(group, "external_id", None)
+                    name_raw = getattr(group, "display_name", None) or getattr(group, "tag", None)
+                gid = str(gid_raw or "").strip() or None
+                name = str(name_raw or "").strip()
                 if not name:
                     continue
                 if gid and gid in existing_by_ext:
@@ -1613,8 +1620,10 @@ class DataStore:
                         added += 1
                     else:
                         updated += 1
-                elif name in existing_by_name and existing_by_name[name]["source"] not in {"oj", "builtin"}:
-                    continue
+                elif name in existing_by_name:
+                    if existing_by_name[name]["source"] not in {"oj", "builtin"}:
+                        continue
+                    updated += 1
                 else:
                     added += 1
                 conn.execute(
@@ -1633,10 +1642,15 @@ class DataStore:
                 )
                 if gid:
                     seen_ext.add(gid)
+                seen_names.add(name)
             stale = [
                 row["name"]
                 for row in existing_rows
-                if row["source"] == "oj" and row["external_id"] and row["external_id"] not in seen_ext
+                if row["source"] == "oj"
+                and (
+                    (row["external_id"] and row["external_id"] not in seen_ext)
+                    or (not row["external_id"] and row["name"] not in seen_names)
+                )
             ]
             if stale:
                 removed = len(stale)
@@ -1708,6 +1722,7 @@ class DataStore:
 
         prepared_groups: List[Tuple[str, str, List[OJGroupMember], str]] = []
         class_tags: Set[str] = set()
+        external_ids: Dict[str, str | None] = {}
         memberships_by_user: Dict[str, Set[str]] = {}
         real_name_by_user: Dict[str, str] = {}
 
@@ -1719,6 +1734,7 @@ class DataStore:
             display = (group.display_name or "").strip() or tag
             members = list(group.members)
             memberships_complete = getattr(group, "memberships_complete", True)
+            ext_id = str(getattr(group, "external_id", "") or "").strip() or None
 
             if (not members or not memberships_complete) and tag in previous_memberships:
                 fallback_members = previous_memberships.get(tag, [])
@@ -1751,6 +1767,7 @@ class DataStore:
                     fallback_groups.append(display)
 
             class_tags.add(tag)
+            external_ids[tag] = ext_id
             last_synced = timestamp if memberships_complete else previous_groups.get(tag, {}).get("last_synced_at", timestamp)
             prepared_groups.append((tag, display, members, last_synced))
 
@@ -1769,7 +1786,9 @@ class DataStore:
 
         conn = self._conn()
         with conn:
-            existing_class_tags = set(previous_groups.keys())
+            existing_group_tags = set(previous_groups.keys())
+            existing_class_tag_rows = conn.execute("SELECT name, source FROM class_tags").fetchall()
+            existing_class_tag_by_name = {row["name"]: row for row in existing_class_tag_rows}
             if class_tags:
                 placeholders = ",".join(["?"] * len(class_tags))
                 conn.execute(
@@ -1804,12 +1823,31 @@ class DataStore:
                         member_rows,
                     )
 
-            if class_tags:
-                conn.executemany(
-                    "INSERT OR IGNORE INTO constant_tags (name) VALUES (?)",
-                    [(tag,) for tag in class_tags],
-                )
-            removed_class_tags = existing_class_tags - class_tags
+                if class_tags:
+                    conn.executemany(
+                        "INSERT OR IGNORE INTO constant_tags (name) VALUES (?)",
+                        [(tag,) for tag in class_tags],
+                    )
+                for tag in class_tags:
+                    current = existing_class_tag_by_name.get(tag)
+                    if current and current["source"] not in {"oj", "builtin"}:
+                        continue
+                    conn.execute(
+                        """
+                        INSERT INTO class_tags (name, source, external_id)
+                        VALUES (?, 'oj', ?)
+                        ON CONFLICT(name) DO UPDATE SET source = excluded.source, external_id = excluded.external_id
+                        """,
+                        (tag, external_ids.get(tag)),
+                    )
+                stale_class_tags = [
+                    row["name"]
+                    for row in existing_class_tag_rows
+                    if row["source"] == "oj" and row["name"] not in class_tags
+                ]
+                if stale_class_tags:
+                    conn.executemany("DELETE FROM class_tags WHERE name = ?", [(name,) for name in stale_class_tags])
+            removed_class_tags = existing_group_tags - class_tags
             if removed_class_tags:
                 conn.executemany(
                     "DELETE FROM constant_tags WHERE name = ?",

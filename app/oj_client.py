@@ -59,6 +59,7 @@ class OJGroup:
     display_name: str
     members: List[OJGroupMember]
     memberships_complete: bool = True
+    external_id: Optional[str] = None
 
 
 class OnlineJudgeClient:
@@ -155,12 +156,14 @@ class OnlineJudgeClient:
         finally:
             session.close()
 
-    def fetch_groups(self, username: str, password: str) -> List[OJGroup]:
-        session = self._login_session(username, password)
-        try:
-            return self._scrape_groups(session)
-        finally:
-            session.close()
+    def fetch_groups(self, username: Optional[str] = None, password: Optional[str] = None) -> List[OJGroup]:
+        if username is not None and password is not None:
+            session = self._login_session(username, password)
+            try:
+                return self._scrape_groups(session)
+            finally:
+                session.close()
+        return self._scrape_groups_public()
 
     def _fetch_profile(self, session: Session, username: str) -> OJUserInfo:
         try:
@@ -181,7 +184,7 @@ class OnlineJudgeClient:
         real_name = self._extract_title(profile_resp.text) or username
         return OJUserInfo(username=username, real_name=real_name.strip() or username)
 
-    def fetch_groups(self) -> list[dict[str, str]]:
+    def _scrape_groups_public(self) -> List[OJGroup]:
         try:
             response = requests.get(
                 self._url("/group/index"),
@@ -197,7 +200,7 @@ class OnlineJudgeClient:
         if response.status_code != 200:
             raise OJServiceUnavailable(f"OJ 返回 {response.status_code}，无法获取小组列表")
 
-        groups = []
+        groups: List[OJGroup] = []
         seen_ids = set()
         for group_id, name in self._GROUP_LINK_RE.findall(response.text):
             if group_id in seen_ids:
@@ -206,7 +209,15 @@ class OnlineJudgeClient:
             if not cleaned:
                 continue
             seen_ids.add(group_id)
-            groups.append({"id": group_id, "name": cleaned})
+            groups.append(
+                OJGroup(
+                    tag=cleaned,
+                    display_name=cleaned,
+                    members=[],
+                    memberships_complete=False,
+                    external_id=group_id,
+                )
+            )
         if not groups:
             raise OJServiceUnavailable("未能从 OJ 页面解析出小组信息")
         return groups
@@ -269,6 +280,7 @@ class OnlineJudgeClient:
                     display_name=display,
                     members=members,
                     memberships_complete=complete,
+                    external_id=group_id,
                 )
             )
             if index + 1 < len(groups):
