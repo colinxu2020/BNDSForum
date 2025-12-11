@@ -11,7 +11,6 @@ from flask import Blueprint, current_app, flash, redirect, render_template, requ
 from flask_login import current_user, login_required
 
 from .datastore import DataStore, DEFAULT_CATEGORY_TAG, DEFAULT_CLASS_TAG
-from .oj_client import OJServiceUnavailable
 
 
 bp = Blueprint("admin", __name__)
@@ -348,27 +347,6 @@ def delete_class_tag():
     datastore.remove_class_tag(tag_name)
     flash("班级标签已删除", "success")
     _notify_admins(f"管理员 {current_user.username} 删除班级标签：{tag_name}")
-    return redirect(url_for("admin.dashboard"))
-
-
-@bp.route("/class-tags/sync", methods=["POST"])
-@login_required
-def sync_class_tags():
-    if not current_user.is_admin:
-        return redirect(url_for("blog.index"))
-    datastore = get_datastore()
-    try:
-        result = datastore.sync_class_tags_from_oj()
-    except OJServiceUnavailable as exc:
-        flash(f"同步 BNDSOJ 小组失败：{exc}", "error")
-    except Exception as exc:  # noqa: BLE001
-        flash(f"同步 BNDSOJ 小组失败：{exc}", "error")
-    else:
-        added = result.get("added", 0)
-        updated = result.get("updated", 0)
-        removed = result.get("removed", 0)
-        flash(f"同步完成：新增 {added}，更新 {updated}，移除 {removed}", "success")
-        _notify_admins(f"完成 BNDSOJ 小组同步：新增 {added}，更新 {updated}，移除 {removed}")
     return redirect(url_for("admin.dashboard"))
 
 

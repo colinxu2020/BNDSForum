@@ -69,7 +69,7 @@ class OnlineJudgeClient:
     PROFILE_PATH = "/user/view"
     _CSRF_RE = re.compile(r'name="_csrf"\s+value="([^"]+)"')
     _TITLE_RE = re.compile(r"<title>(.*?)</title>", re.S)
-    _USERNAME_RE = re.compile(r"^[A-Za-z0-9_]{1,32}$")
+    _GROUP_LINK_RE = re.compile(r"/group/(?:index|view)?/?(\d+)[^>]*>([^<]+)<", re.I)
 
     def __init__(
         self,
@@ -165,7 +165,7 @@ class OnlineJudgeClient:
 
     def fetch_groups_public(self) -> List[OJGroup]:
         """
-        获取公开可见的小组列表（不含成员），用于后台同步班级标签。
+        获取公开可见的小组列表（不含成员），使用与旧实现一致的页面解析。
         """
         try:
             response = requests.get(
@@ -182,26 +182,29 @@ class OnlineJudgeClient:
         if response.status_code != 200:
             raise OJServiceUnavailable(f"OJ 返回 {response.status_code}，无法获取小组列表")
 
-        soup = BeautifulSoup(response.text, "html.parser")
-        groups: List[Tuple[str, str]] = []
-        for card in soup.select("div[data-key] .card-header a[href*='/group/view']"):
-            href = card.get("href", "")
-            group_id = self._parse_query_param(href, "id")
-            if not group_id:
+        groups: List[OJGroup] = []
+        seen_ids = set()
+        for group_id, name in self._GROUP_LINK_RE.findall(response.text):
+            if group_id in seen_ids:
                 continue
-            name = card.get_text(strip=True)
-            if not name:
+            cleaned = html.unescape(name).strip()
+            if not cleaned:
                 continue
-            groups.append((group_id, html.unescape(name)))
+            seen_ids.add(group_id)
+            groups.append(
+                OJGroup(
+                    tag=cleaned,
+                    display_name=cleaned,
+                    members=[],
+                    memberships_complete=False,
+                    external_id=group_id,
+                )
+            )
 
         if not groups:
             raise OJServiceUnavailable("未能从 OJ 页面解析出小组信息")
 
-        return [
-            OJGroup(tag=name.strip(), display_name=name.strip(), members=[], memberships_complete=False, external_id=gid)
-            for gid, name in groups
-            if name.strip()
-        ]
+        return groups
 
     def _fetch_profile(self, session: Session, username: str) -> OJUserInfo:
         try:
@@ -344,8 +347,6 @@ class OnlineJudgeClient:
                 real_name = link.get_text(strip=True)
                 username, resolved_real_name = self._resolve_user_identity(session, user_id, user_cache)
                 if not username or username in seen_usernames:
-                    continue
-                if not self._USERNAME_RE.match(username):
                     continue
                 seen_usernames.add(username)
                 members.append(
