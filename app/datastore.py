@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
+import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
@@ -1639,7 +1640,7 @@ class DataStore:
         if not self._try_acquire_class_sync_lock(now):
             return
         try:
-            groups = self._oj_client.fetch_groups(username, password)
+            groups = self._fetch_groups_with_retry(username, password)
             if self._sync_class_groups(groups):
                 self._set_metadata_value("class_sync_last_run", now.strftime(ISO_FORMAT))
         except OJInvalidCredentials:
@@ -1652,6 +1653,25 @@ class DataStore:
             return
         finally:
             self._release_class_sync_lock()
+
+    def _fetch_groups_with_retry(self, username: str, password: str, *, retries: int = 3, delay: float = 0.8) -> List[OJGroup]:
+        attempt = 0
+        last_error: Exception | None = None
+        while attempt < max(1, retries):
+            try:
+                return self._oj_client.fetch_groups(username, password)
+            except OJServiceUnavailable as exc:
+                last_error = exc
+                attempt += 1
+                if attempt >= retries:
+                    break
+                time.sleep(delay)
+            except Exception as exc:
+                last_error = exc
+                break
+        if last_error:
+            raise last_error
+        return []
 
     def _sync_class_groups(self, groups: List[OJGroup]) -> bool:
         if not groups:
