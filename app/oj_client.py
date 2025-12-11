@@ -3,10 +3,12 @@ from __future__ import annotations
 import html
 import os
 import re
+import time
 from dataclasses import dataclass
-from typing import Optional
+from typing import Dict, List, Optional, Tuple, Set
 
 import requests
+from bs4 import BeautifulSoup
 from requests import Session
 from requests.exceptions import RequestException, SSLError
 
@@ -17,6 +19,8 @@ __all__ = [
     "OJAccountNotFound",
     "OJServiceUnavailable",
     "OnlineJudgeClient",
+    "OJGroup",
+    "OJGroupMember",
     "OJUserInfo",
 ]
 
@@ -41,6 +45,20 @@ class OJServiceUnavailable(OJLoginError):
 class OJUserInfo:
     username: str
     real_name: str
+
+
+@dataclass
+class OJGroupMember:
+    username: str
+    real_name: str
+
+
+@dataclass
+class OJGroup:
+    tag: str
+    display_name: str
+    members: List[OJGroupMember]
+    memberships_complete: bool = True
 
 
 class OnlineJudgeClient:
@@ -79,10 +97,13 @@ class OnlineJudgeClient:
 
             disable_warnings(InsecureRequestWarning)
 
-    def authenticate(self, username: str, password: str) -> OJUserInfo:
+    def _build_session(self) -> Session:
         session = requests.Session()
         session.headers.update({"User-Agent": "BNDSForum/1.0 (+https://onlinejudge.bnds.cn/)"})
+        return session
 
+    def _login_session(self, username: str, password: str) -> Session:
+        session = self._build_session()
         try:
             login_page = session.get(
                 self._url(self.LOGIN_PATH),
@@ -117,7 +138,7 @@ class OnlineJudgeClient:
             raise OJServiceUnavailable("发送登录请求失败") from exc
 
         if response.status_code == 302:
-            return self._fetch_profile(session, username)
+            return session
 
         body = response.text
         if "用户名不存在" in body:
@@ -126,6 +147,20 @@ class OnlineJudgeClient:
             raise OJInvalidCredentials("密码错误")
 
         raise OJServiceUnavailable("OJ 登录返回了未预期的响应")
+
+    def authenticate(self, username: str, password: str) -> OJUserInfo:
+        session = self._login_session(username, password)
+        try:
+            return self._fetch_profile(session, username)
+        finally:
+            session.close()
+
+    def fetch_groups(self, username: str, password: str) -> List[OJGroup]:
+        session = self._login_session(username, password)
+        try:
+            return self._scrape_groups(session)
+        finally:
+            session.close()
 
     def _fetch_profile(self, session: Session, username: str) -> OJUserInfo:
         try:
@@ -192,3 +227,176 @@ class OnlineJudgeClient:
         if path.startswith("http://") or path.startswith("https://"):
             return path
         return f"{self.base_url}{path}"
+
+    def _scrape_groups(self, session: Session) -> List[OJGroup]:
+        try:
+            index_resp = session.get(
+                self._url("/group/index"),
+                timeout=self.timeout,
+                verify=self.verify_ssl,
+            )
+        except SSLError as exc:
+            raise OJServiceUnavailable("无法建立到 OJ 的安全连接") from exc
+        except RequestException as exc:
+            raise OJServiceUnavailable("拉取小组列表失败") from exc
+        if index_resp.status_code != 200:
+            raise OJServiceUnavailable("无法获取小组列表页面")
+
+        soup = BeautifulSoup(index_resp.text, "html.parser")
+        groups: List[Tuple[str, str]] = []
+        for card in soup.select("div[data-key] .card-header a[href*='/group/view']"):
+            href = card.get("href", "")
+            group_id = self._parse_query_param(href, "id")
+            if not group_id:
+                continue
+            name = card.get_text(strip=True)
+            if not name:
+                continue
+            groups.append((group_id, html.unescape(name)))
+
+        if not groups:
+            return []
+
+        user_cache: Dict[str, Tuple[str, str]] = {}
+        result: List[OJGroup] = []
+        for index, (group_id, group_name) in enumerate(groups):
+            members, complete = self._scrape_group_members(session, group_id, user_cache)
+            display = group_name.strip()
+            tag = display
+            result.append(
+                OJGroup(
+                    tag=tag,
+                    display_name=display,
+                    members=members,
+                    memberships_complete=complete,
+                )
+            )
+            if index + 1 < len(groups):
+                time.sleep(0.25)
+        return result
+
+    def _scrape_group_members(
+        self,
+        session: Session,
+        group_id: str,
+        user_cache: Dict[str, Tuple[str, str]],
+    ) -> Tuple[List[OJGroupMember], bool]:
+        members: List[OJGroupMember] = []
+        seen_usernames: Set[str] = set()
+        page = 1
+        per_page = 50
+        success = False
+
+        while True:
+            params = {"id": group_id, "per-page": per_page}
+            if page > 1:
+                params["page"] = page
+            try:
+                resp = session.get(
+                    self._url("/group/view"),
+                    params=params,
+                    timeout=self.timeout,
+                    verify=self.verify_ssl,
+                )
+            except SSLError as exc:
+                raise OJServiceUnavailable("无法建立到 OJ 的安全连接") from exc
+            except RequestException as exc:
+                raise OJServiceUnavailable(f"加载小组 {group_id} 详情失败") from exc
+            if resp.status_code != 200:
+                break
+
+            soup = BeautifulSoup(resp.text, "html.parser")
+            table = None
+            for candidate in soup.select("table.table"):
+                if candidate.select_one("tbody tr a[href*='/user/view']"):
+                    table = candidate
+                    break
+            if not table:
+                if page == 1:
+                    return ([], False)
+                break
+
+            rows = table.select("tbody tr")
+            if not rows:
+                break
+
+            new_entries = 0
+            for row in rows:
+                link = row.select_one("td a[href*='/user/view']")
+                if not link:
+                    continue
+                href = link.get("href", "")
+                user_id = self._parse_query_param(href, "id")
+                if not user_id:
+                    continue
+                real_name = link.get_text(strip=True)
+                username, resolved_real_name = self._resolve_user_identity(session, user_id, user_cache)
+                if not username or username in seen_usernames:
+                    continue
+                seen_usernames.add(username)
+                members.append(
+                    OJGroupMember(
+                        username=username,
+                        real_name=resolved_real_name or real_name,
+                    )
+                )
+                new_entries += 1
+
+            if new_entries:
+                success = True
+
+            if len(rows) < per_page or new_entries == 0:
+                break
+
+            page += 1
+            time.sleep(0.2)
+
+        return (members, success)
+
+    def _resolve_user_identity(
+        self,
+        session: Session,
+        user_id: str,
+        cache: Dict[str, Tuple[str, str]],
+    ) -> Tuple[str, str]:
+        if user_id in cache:
+            return cache[user_id]
+        try:
+            resp = session.get(
+                self._url(f"/user/view?id={user_id}"),
+                timeout=self.timeout,
+                verify=self.verify_ssl,
+            )
+        except SSLError as exc:
+            raise OJServiceUnavailable("无法建立到 OJ 的安全连接") from exc
+        except RequestException as exc:
+            raise OJServiceUnavailable(f"加载用户 {user_id} 信息失败") from exc
+        if resp.status_code != 200:
+            cache[user_id] = ("", "")
+            return "", ""
+        soup = BeautifulSoup(resp.text, "html.parser")
+        username = self._extract_detail_value(soup, "用户名")
+        nickname = self._extract_detail_value(soup, "昵称")
+        cache[user_id] = (username or "", nickname or "")
+        return cache[user_id]
+
+    def _extract_detail_value(self, soup: BeautifulSoup, label: str) -> Optional[str]:
+        header = soup.find("th", string=label)
+        if not header:
+            return None
+        cell = header.find_next("td")
+        if not cell:
+            return None
+        return cell.get_text(strip=True)
+
+    def _parse_query_param(self, href: str, key: str) -> Optional[str]:
+        if "?" not in href:
+            return None
+        query = href.split("?", 1)[1]
+        for part in query.split("&"):
+            if "=" not in part:
+                continue
+            name, value = part.split("=", 1)
+            if name == key:
+                return value
+        return None

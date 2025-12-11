@@ -24,7 +24,14 @@
     var MATH_SEGMENT_RE = /(\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)|\$(?!\$)[^$]*?\$)/g;
     var KATEX_BRACE_PLACEHOLDERS = {
         '\\{': 'KATEXLEFTBRACEPLACEHOLDER',
-        '\\}': 'KATEXRIGHTBRACEPLACEHOLDER'
+        '\\}': 'KATEXRIGHTBRACEPLACEHOLDER',
+        '\\&': 'KATEXAMPERSANDPLACEHOLDER',
+        '&': 'KATEXALIGNAMPERSANDPLACEHOLDER',
+        '\\%': 'KATEXPERCENTPLACEHOLDER',
+        '\\#': 'KATEXHASHPLACEHOLDER',
+        '\\$': 'KATEXDOLLARPLACEHOLDER',
+        '\\\\': 'KATEXDOUBLEBACKSLASHPLACEHOLDER',
+        '_': 'KATEXUNDERSCOREPLACEHOLDER'
     };
 
     var mdInstance = null;

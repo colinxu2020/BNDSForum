@@ -1,9 +1,8 @@
-
 from __future__ import annotations
 
 import re
 from datetime import datetime, timezone
-from typing import Dict, Optional, Set, Tuple
+from typing import Any, Dict, Optional, Set, Tuple
 
 from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
@@ -13,12 +12,7 @@ from markdown_it.token import Token
 from mdit_py_plugins.container import container_plugin
 from mdit_py_plugins.tasklists import tasklists_plugin
 
-from .datastore import (
-    DEFAULT_CATEGORY_TAG,
-    DEFAULT_CLASS_TAG,
-    ISO_FORMAT,
-    DataStore,
-)
+from .datastore import DEFAULT_CATEGORY_TAG, DEFAULT_CLASS_TAG, ISO_FORMAT, DataStore
 
 
 bp = Blueprint("blog", __name__)
@@ -26,9 +20,16 @@ bp = Blueprint("blog", __name__)
 _MATH_SEGMENT_RE = re.compile(
     r"(\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)|\$\$[\s\S]*?\$\$|\$(?!\$)[^$]*?\$)"
 )
-_KATEX_BRACE_PLACEHOLDERS = {
+_KATEX_PLACEHOLDERS = {
     r"\{": "KATEXLEFTBRACEPLACEHOLDER",
     r"\}": "KATEXRIGHTBRACEPLACEHOLDER",
+    r"\&": "KATEXAMPERSANDPLACEHOLDER",
+    "&": "KATEXALIGNAMPERSANDPLACEHOLDER",
+    r"\%": "KATEXPERCENTPLACEHOLDER",
+    r"\#": "KATEXHASHPLACEHOLDER",
+    r"\$": "KATEXDOLLARPLACEHOLDER",
+    r"\\": "KATEXDOUBLEBACKSLASHPLACEHOLDER",
+    "_": "KATEXUNDERSCOREPLACEHOLDER",
 }
 
 _CALLOUT_KINDS = {"info", "success", "warning", "error"}
@@ -39,6 +40,7 @@ _CALLOUT_DEFAULT_TITLES = {
     "error": "Error",
 }
 _CALLOUT_INFO_RE = re.compile(r"^([\w-]+)(?:\[([^\]]*)\])?(?:\{([^}]*)\})?")
+_MENTION_RE = re.compile(r"@([A-Za-z0-9_]{1,32})")
 
 
 def _parse_callout_info(params: str) -> Tuple[str, str | None, Dict[str, str]] | None:
@@ -116,7 +118,7 @@ _markdowner = _create_markdown_renderer()
 def _protect_katex_braces(source: str) -> str:
     def _replace(match: re.Match[str]) -> str:
         segment = match.group(0)
-        for token, placeholder in _KATEX_BRACE_PLACEHOLDERS.items():
+        for token, placeholder in _KATEX_PLACEHOLDERS.items():
             segment = segment.replace(token, placeholder)
         return segment
 
@@ -124,7 +126,7 @@ def _protect_katex_braces(source: str) -> str:
 
 
 def _restore_katex_braces(rendered: str) -> str:
-    for token, placeholder in _KATEX_BRACE_PLACEHOLDERS.items():
+    for token, placeholder in _KATEX_PLACEHOLDERS.items():
         rendered = rendered.replace("\\" + placeholder, placeholder)
         rendered = rendered.replace(placeholder, token)
     return rendered
@@ -177,6 +179,62 @@ def friendly_time(value: str | None) -> str:
     base = local_dt.strftime("%Y-%m-%d %H:%M")
     relative = _relative_time_label(parsed)
     return f"{base} · {relative}" if relative else base
+
+
+def _extract_mentions(content: str) -> Set[str]:
+    if not content:
+        return set()
+    return {match.group(1) for match in _MENTION_RE.finditer(content)}
+
+
+def _notify_mentions(
+    datastore: DataStore,
+    author_username: str,
+    author_display: str,
+    post_id: str,
+    post: dict,
+    comment: Dict[str, Any],
+    raw_content: str,
+) -> None:
+    mentions = _extract_mentions(raw_content)
+    if not mentions:
+        return
+    post_title = str(post.get("title") or "未命名文章")
+    permalink = url_for("blog.detail", post_id=post_id, _external=True) + f"#comment-{comment['id']}"
+    snippet = raw_content.strip()
+    if len(snippet) > 120:
+        snippet = snippet[:117] + "..."
+    message_template = (
+        "{author} 在《{title}》的评论中 @ 了你：\n"
+        "{snippet}\n"
+        "查看评论：{link}"
+    )
+    for username in mentions:
+        if username == author_username:
+            continue
+        if not datastore.get_user(username):
+            continue
+        try:
+            datastore.send_private_message(
+                author_username,
+                username,
+                message_template.format(
+                    author=author_display,
+                    title=post_title,
+                    snippet=snippet or "(评论内容为空)",
+                    link=permalink,
+                ),
+            )
+        except (PermissionError, ValueError):
+            continue
+
+
+def _notify_system(message: str) -> None:
+    datastore = get_datastore()
+    try:
+        datastore.send_system_notification(message)
+    except Exception:  # pragma: no cover
+        current_app.logger.exception("发送系统通知失败：%s", message)
 
 
 def get_datastore() -> DataStore:
@@ -331,6 +389,8 @@ def create():
             author_constant_tags=getattr(current_user, "constant_tags", []),
         )
         flash("文章创建成功", "success")
+        title_display = title if len(title) <= 40 else title[:37] + "…"
+        _notify_system(f"用户 {current_user.username} 发布文章《{title_display}》")
         return redirect(url_for("blog.index"))
     return render_template(
         "blog/edit.html",
@@ -367,8 +427,14 @@ def detail(post_id: str):
         if not content:
             flash("评论内容不能为空", "error")
         else:
-            datastore.add_comment(post_id, current_user.username, content)
+            comment_record = datastore.add_comment(post_id, current_user.username, content)
+            author_display = getattr(current_user, "real_name", "") or current_user.username
+            _notify_mentions(datastore, current_user.username, author_display, post_id, post, comment_record, content)
             flash("评论已发布", "success")
+            snippet = content if len(content) <= 60 else content[:57] + "…"
+            title_display = post.get("title", "")
+            title_display = title_display if len(title_display) <= 40 else title_display[:37] + "…"
+            _notify_system(f"用户 {current_user.username} 在文章《{title_display}》发表评论：{snippet}")
             return redirect(url_for("blog.detail", post_id=post_id))
     user_map = _user_lookup(datastore)
     favorite_post_ids: Set[str] = set()
@@ -388,22 +454,34 @@ def detail(post_id: str):
 @login_required
 def favorite(post_id: str):
     datastore = get_datastore()
+    post = datastore.get_post(post_id)
+    if not post:
+        flash("未找到文章，无法进行收藏操作", "error")
+        return redirect(url_for("blog.index"))
+    title_display = post.get("title", "")
+    title_display = title_display if len(title_display) <= 40 else title_display[:37] + "…"
     action = (request.form.get("action") or "add").strip().lower()
     next_url = request.form.get("next") or request.referrer or url_for("blog.detail", post_id=post_id)
     try:
         if action == "remove":
             removed = datastore.unfavorite_post(post_id, current_user.username)
             flash("已取消收藏" if removed else "该文章不在收藏夹中", "success" if removed else "info")
+            if removed:
+                _notify_system(f"用户 {current_user.username} 取消收藏文章《{title_display}》")
         elif action == "toggle":
             if datastore.is_post_favorited(post_id, current_user.username):
                 datastore.unfavorite_post(post_id, current_user.username)
                 flash("已取消收藏", "success")
+                _notify_system(f"用户 {current_user.username} 取消收藏文章《{title_display}》")
             else:
                 datastore.favorite_post(post_id, current_user.username)
                 flash("收藏成功", "success")
+                _notify_system(f"用户 {current_user.username} 收藏文章《{title_display}》")
         else:
             added = datastore.favorite_post(post_id, current_user.username)
             flash("收藏成功" if added else "文章已在收藏夹中", "success" if added else "info")
+            if added:
+                _notify_system(f"用户 {current_user.username} 收藏文章《{title_display}》")
     except ValueError:
         flash("未找到文章，无法进行收藏操作", "error")
         return redirect(url_for("blog.index"))
@@ -447,6 +525,9 @@ def delete_comment(post_id: str, comment_id: str):
         flash("评论不存在或已删除", "error")
     else:
         flash("评论已删除", "success")
+        title_display = post.get("title", "")
+        title_display = title_display if len(title_display) <= 40 else title_display[:37] + "…"
+        _notify_system(f"用户 {current_user.username} 删除了文章《{title_display}》的一条评论")
     return redirect(url_for("blog.detail", post_id=post_id))
 
 
@@ -491,6 +572,8 @@ def edit(post_id: str):
                 author_constant_tags=author_constant_tags,
             )
             flash("文章已更新", "success")
+            title_display = title if len(title) <= 40 else title[:37] + "…"
+            _notify_system(f"用户 {current_user.username} 更新文章《{title_display}》")
             return redirect(url_for("blog.detail", post_id=post_id))
     selected_category = current_category
     selected_class = current_class
@@ -521,6 +604,9 @@ def delete(post_id: str):
         return redirect(url_for("blog.detail", post_id=post_id))
     datastore.delete_post(post_id)
     flash("文章已删除", "success")
+    title_display = post.get("title", "")
+    title_display = title_display if len(title_display) <= 40 else title_display[:37] + "…"
+    _notify_system(f"用户 {current_user.username} 删除文章《{title_display}》")
     return redirect(url_for("blog.index"))
 
 

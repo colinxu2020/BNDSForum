@@ -21,6 +21,14 @@ def get_datastore() -> DataStore:
     return current_app.extensions["datastore"]
 
 
+def _notify_admins(message: str) -> None:
+    datastore = get_datastore()
+    try:
+        datastore.send_system_notification(message)
+    except Exception:  # pragma: no cover - best effort
+        current_app.logger.exception("发送系统通知失败：%s", message)
+
+
 @bp.before_request
 def check_admin():
     if request.endpoint and request.endpoint.startswith("admin."):
@@ -275,6 +283,7 @@ def add_category_tag():
         datastore = get_datastore()
         datastore.add_category_tag(tag_name)
         flash("类别标签已添加", "success")
+        _notify_admins(f"管理员 {current_user.username} 新增类别标签：{tag_name}")
     return redirect(url_for("admin.dashboard"))
 
 
@@ -288,8 +297,13 @@ def delete_category_tag():
         flash("未指定类别标签", "error")
         return redirect(url_for("admin.dashboard"))
     datastore = get_datastore()
-    datastore.remove_category_tag(tag_name)
-    flash("类别标签已删除", "success")
+    try:
+        datastore.remove_category_tag(tag_name)
+    except ValueError as exc:
+        flash(str(exc), "error")
+    else:
+        flash("类别标签已删除", "success")
+        _notify_admins(f"管理员 {current_user.username} 删除类别标签：{tag_name}")
     return redirect(url_for("admin.dashboard"))
 
 
@@ -309,6 +323,7 @@ def add_class_tag():
             flash(str(exc), "error")
         else:
             flash("班级标签已添加", "success")
+            _notify_admins(f"管理员 {current_user.username} 新增班级标签：{tag_name}")
     return redirect(url_for("admin.dashboard"))
 
 
@@ -332,6 +347,7 @@ def delete_class_tag():
         return redirect(url_for("admin.dashboard"))
     datastore.remove_class_tag(tag_name)
     flash("班级标签已删除", "success")
+    _notify_admins(f"管理员 {current_user.username} 删除班级标签：{tag_name}")
     return redirect(url_for("admin.dashboard"))
 
 
@@ -352,6 +368,7 @@ def sync_class_tags():
         updated = result.get("updated", 0)
         removed = result.get("removed", 0)
         flash(f"同步完成：新增 {added}，更新 {updated}，移除 {removed}", "success")
+        _notify_admins(f"完成 BNDSOJ 小组同步：新增 {added}，更新 {updated}，移除 {removed}")
     return redirect(url_for("admin.dashboard"))
 
 
@@ -372,6 +389,7 @@ def add_constant_tag():
         else:
             if inserted:
                 flash("固定标签已添加", "success")
+                _notify_admins(f"管理员 {current_user.username} 新增固定标签：{tag_name}")
             else:
                 flash("固定标签已存在", "info")
     return redirect(url_for("admin.dashboard"))
@@ -393,6 +411,7 @@ def delete_constant_tag():
         flash(str(exc), "error")
     else:
         flash("固定标签已删除", "success")
+        _notify_admins(f"管理员 {current_user.username} 删除固定标签：{tag_name}")
     return redirect(url_for("admin.dashboard"))
 
 
@@ -404,6 +423,7 @@ def update_user():
     username = request.form.get("username", "").strip()
     role = request.form.get("role", "user")
     real_name = request.form.get("real_name", "").strip()
+
     def _normalize_constants(raw_values: List[str]) -> list[str]:
         result: list[str] = []
         seen: set[str] = set()
@@ -468,6 +488,9 @@ def update_user():
         datastore.update_user_constant_tags(username, constant_tags)
     datastore.set_user_role(username, role)
     flash("用户信息已更新", "success")
+    _notify_admins(
+        f"管理员 {current_user.username} 更新用户 {username} 信息：角色={role}，真实姓名={real_name}"
+    )
     fallback = url_for("admin.user_list")
     redirect_target = fallback
     if return_to and return_to.startswith(fallback):
@@ -514,6 +537,7 @@ def ban_user(username: str):
         flash(str(exc), "error")
     else:
         flash("用户已封禁", "success")
+        _notify_admins(f"管理员 {current_user.username} 封禁用户：{target_username}")
     return redirect(redirect_target)
 
 
@@ -545,6 +569,7 @@ def unban_user(username: str):
         flash(str(exc), "error")
     else:
         flash("用户已解封", "success")
+        _notify_admins(f"管理员 {current_user.username} 解封用户：{target_username}")
     return redirect(redirect_target)
 
 
@@ -618,6 +643,9 @@ def bulk_update_user_tags():
     if updated_count:
         action_label = "添加" if operation == "add" else "移除"
         flash(f"已为 {updated_count} 位用户{action_label}固定标签", "success")
+        _notify_admins(
+            f"管理员 {current_user.username}{action_label}固定标签 {', '.join(selected_tags)} 给 {updated_count} 位用户"
+        )
     else:
         flash("选中的用户无需更新固定标签", "info")
 

@@ -78,7 +78,7 @@
     {% if comments %}
         <div class="comment-list">
             {% for comment in comments %}
-                <article class="comment-item">
+                <article class="comment-item" id="comment-{{ comment['id'] }}">
                     <div class="comment-meta">
                         <strong>
                             <a href="{{ url_for('blog.user_profile', username=comment['author']) }}">
