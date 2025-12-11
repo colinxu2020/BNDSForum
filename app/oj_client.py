@@ -69,7 +69,7 @@ class OnlineJudgeClient:
     PROFILE_PATH = "/user/view"
     _CSRF_RE = re.compile(r'name="_csrf"\s+value="([^"]+)"')
     _TITLE_RE = re.compile(r"<title>(.*?)</title>", re.S)
-    _GROUP_LINK_RE = re.compile(r"/group/(?:index|view)?/?(\d+)[^>]*>([^<]+)<", re.I)
+    _USERNAME_RE = re.compile(r"^[A-Za-z0-9_]{1,32}$")
 
     def __init__(
         self,
@@ -156,14 +156,52 @@ class OnlineJudgeClient:
         finally:
             session.close()
 
-    def fetch_groups(self, username: Optional[str] = None, password: Optional[str] = None) -> List[OJGroup]:
-        if username is not None and password is not None:
-            session = self._login_session(username, password)
-            try:
-                return self._scrape_groups(session)
-            finally:
-                session.close()
-        return self._scrape_groups_public()
+    def fetch_groups(self, username: str, password: str) -> List[OJGroup]:
+        session = self._login_session(username, password)
+        try:
+            return self._scrape_groups(session)
+        finally:
+            session.close()
+
+    def fetch_groups_public(self) -> List[OJGroup]:
+        """
+        获取公开可见的小组列表（不含成员），用于后台同步班级标签。
+        """
+        try:
+            response = requests.get(
+                self._url("/group/index"),
+                timeout=self.timeout,
+                verify=self.verify_ssl,
+                headers={"User-Agent": "BNDSForum/1.0 (+https://onlinejudge.bnds.cn/)"},
+            )
+        except SSLError as exc:
+            raise OJServiceUnavailable("无法建立到 OJ 的安全连接") from exc
+        except RequestException as exc:
+            raise OJServiceUnavailable("获取小组列表失败") from exc
+
+        if response.status_code != 200:
+            raise OJServiceUnavailable(f"OJ 返回 {response.status_code}，无法获取小组列表")
+
+        soup = BeautifulSoup(response.text, "html.parser")
+        groups: List[Tuple[str, str]] = []
+        for card in soup.select("div[data-key] .card-header a[href*='/group/view']"):
+            href = card.get("href", "")
+            group_id = self._parse_query_param(href, "id")
+            if not group_id:
+                continue
+            name = card.get_text(strip=True)
+            if not name:
+                continue
+            groups.append((group_id, html.unescape(name)))
+
+        if not groups:
+            raise OJServiceUnavailable("未能从 OJ 页面解析出小组信息")
+
+        return [
+            OJGroup(tag=name.strip(), display_name=name.strip(), members=[], memberships_complete=False, external_id=gid)
+            for gid, name in groups
+            if name.strip()
+        ]
 
     def _fetch_profile(self, session: Session, username: str) -> OJUserInfo:
         try:
@@ -183,44 +221,6 @@ class OnlineJudgeClient:
 
         real_name = self._extract_title(profile_resp.text) or username
         return OJUserInfo(username=username, real_name=real_name.strip() or username)
-
-    def _scrape_groups_public(self) -> List[OJGroup]:
-        try:
-            response = requests.get(
-                self._url("/group/index"),
-                timeout=self.timeout,
-                verify=self.verify_ssl,
-                headers={"User-Agent": "BNDSForum/1.0 (+https://onlinejudge.bnds.cn/)"},
-            )
-        except SSLError as exc:
-            raise OJServiceUnavailable("无法建立到 OJ 的安全连接") from exc
-        except RequestException as exc:
-            raise OJServiceUnavailable("获取小组列表失败") from exc
-
-        if response.status_code != 200:
-            raise OJServiceUnavailable(f"OJ 返回 {response.status_code}，无法获取小组列表")
-
-        groups: List[OJGroup] = []
-        seen_ids = set()
-        for group_id, name in self._GROUP_LINK_RE.findall(response.text):
-            if group_id in seen_ids:
-                continue
-            cleaned = html.unescape(name).strip()
-            if not cleaned:
-                continue
-            seen_ids.add(group_id)
-            groups.append(
-                OJGroup(
-                    tag=cleaned,
-                    display_name=cleaned,
-                    members=[],
-                    memberships_complete=False,
-                    external_id=group_id,
-                )
-            )
-        if not groups:
-            raise OJServiceUnavailable("未能从 OJ 页面解析出小组信息")
-        return groups
 
     def _extract_csrf(self, html_text: str) -> Optional[str]:
         match = self._CSRF_RE.search(html_text)
@@ -344,6 +344,8 @@ class OnlineJudgeClient:
                 real_name = link.get_text(strip=True)
                 username, resolved_real_name = self._resolve_user_identity(session, user_id, user_cache)
                 if not username or username in seen_usernames:
+                    continue
+                if not self._USERNAME_RE.match(username):
                     continue
                 seen_usernames.add(username)
                 members.append(

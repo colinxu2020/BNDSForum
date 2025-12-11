@@ -1586,7 +1586,7 @@ class DataStore:
                 self._replace_post_tags(conn, post_id, self._normalize_tags(tags))
 
     def sync_class_tags_from_oj(self) -> Dict[str, int]:
-        groups = self._oj_client.fetch_groups()
+        groups = self._oj_client.fetch_groups_public()
         conn = self._conn()
         with conn:
             existing_rows = conn.execute(
