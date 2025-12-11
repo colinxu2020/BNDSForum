@@ -195,6 +195,7 @@ class DataStore:
             self._ensure_schema(conn)
             self._maybe_migrate_legacy(conn)
             self._sync_constant_tag_catalog(conn)
+            self._disable_constant_tags(conn)
             self._ensure_tag_defaults(conn)
             self._migrate_post_tag_columns(conn)
             self._ensure_root_node(conn)
@@ -449,26 +450,12 @@ class DataStore:
             pass
 
     def _sync_constant_tag_catalog(self, conn: sqlite3.Connection) -> None:
+        return
+
+    def _disable_constant_tags(self, conn: sqlite3.Connection) -> None:
         with conn:
-            existing = {
-                row["name"]
-                for row in conn.execute("SELECT name FROM constant_tags")
-            }
-            rows = conn.execute("SELECT constant_tags FROM users").fetchall()
-        discovered: Set[str] = set()
-        for row in rows:
-            for tag in self._deserialize_tags(row["constant_tags"]):
-                stripped = tag.strip()
-                if stripped:
-                    discovered.add(stripped)
-        missing = [tag for tag in discovered if tag not in existing]
-        if not missing:
-            return
-        with conn:
-            conn.executemany(
-                "INSERT OR IGNORE INTO constant_tags (name) VALUES (?)",
-                [(tag,) for tag in missing],
-            )
+            conn.execute("DELETE FROM constant_tags")
+            conn.execute("UPDATE users SET constant_tags = '[]'")
 
     def _write_tag_tree(self, conn: sqlite3.Connection, tree: Dict[str, Any]) -> None:
         nodes = {node.get("id"): node for node in tree.get("nodes", []) if node.get("id")}
@@ -745,7 +732,7 @@ class DataStore:
     ) -> User:
         if self.get_user(username):
             raise ValueError("用户已存在")
-        prepared_tags = self._normalize_tags(constant_tags)
+        prepared_tags: List[str] = []
         conn = self._conn()
         password_hash = generate_password_hash(password)
         with conn:
@@ -777,50 +764,10 @@ class DataStore:
             ).fetchone()
             if not row:
                 raise ValueError("未找到用户")
-
-            previous_tags = set(self._deserialize_tags(row["constant_tags"]))
-            tags = self._normalize_tags(constant_tags)
-            new_tags = set(tags)
-
-            if new_tags:
-                conn.executemany(
-                    "INSERT OR IGNORE INTO constant_tags (name) VALUES (?)",
-                    [(tag,) for tag in new_tags],
-                )
-
             conn.execute(
-                "UPDATE users SET constant_tags = ? WHERE username = ?",
-                (json.dumps(tags, ensure_ascii=False), username),
-            )
-
-            if previous_tags == new_tags:
-                return
-
-            post_rows = conn.execute(
-                "SELECT id FROM posts WHERE author = ?",
+                "UPDATE users SET constant_tags = json('[]') WHERE username = ?",
                 (username,),
-            ).fetchall()
-
-            for post_row in post_rows:
-                post_id = post_row["id"]
-                existing_rows = conn.execute(
-                    "SELECT tag FROM post_tags WHERE post_id = ?",
-                    (post_id,),
-                ).fetchall()
-                existing_tags = [row["tag"] for row in existing_rows]
-                normalized_existing = self._normalize_tags(existing_tags)
-
-                residual_tags = [tag for tag in normalized_existing if tag not in previous_tags]
-                final_tags = self._normalize_tags(list(residual_tags) + list(new_tags))
-
-                if final_tags == normalized_existing:
-                    continue
-
-                self._replace_post_tags(conn, post_id, final_tags)
-                conn.execute(
-                    "UPDATE posts SET updated_at = ? WHERE id = ?",
-                    (utcnow_str(), post_id),
-                )
+            )
 
     def set_user_role(self, username: str, role: str) -> None:
         conn = self._conn()
@@ -999,8 +946,6 @@ class DataStore:
         all_tags = [category, class_value]
         if extra_tags:
             all_tags.extend(extra_tags)
-        if author_constant_tags:
-            all_tags.extend(author_constant_tags)
         normalized_tags = self._normalize_tags(all_tags)
         with conn:
             conn.execute(
@@ -1068,7 +1013,7 @@ class DataStore:
         if class_tag is not None:
             updates.append("class_tag = ?")
             params.append(new_class)
-        should_update_tags = extra_tags is not None or category_tag is not None or class_tag is not None or author_constant_tags is not None
+        should_update_tags = extra_tags is not None or category_tag is not None or class_tag is not None
         should_touch = bool(updates) or should_update_tags
         if should_touch:
             updates.append("updated_at = ?")
@@ -1084,8 +1029,6 @@ class DataStore:
                 extras = extras_existing
                 if extra_tags is not None:
                     extras = list(extra_tags)
-                if author_constant_tags is not None:
-                    extras = extras + list(author_constant_tags)
                 normalized_tags = self._normalize_tags([new_category, new_class, *extras])
                 self._replace_post_tags(conn, post_id, normalized_tags)
         refreshed = self.get_post(post_id)
@@ -1823,11 +1766,6 @@ class DataStore:
                         member_rows,
                     )
 
-                if class_tags:
-                    conn.executemany(
-                        "INSERT OR IGNORE INTO constant_tags (name) VALUES (?)",
-                        [(tag,) for tag in class_tags],
-                    )
                 for tag in class_tags:
                     current = existing_class_tag_by_name.get(tag)
                     if current and current["source"] not in {"oj", "builtin"}:
@@ -1849,21 +1787,12 @@ class DataStore:
                     conn.executemany("DELETE FROM class_tags WHERE name = ?", [(name,) for name in stale_class_tags])
             removed_class_tags = existing_group_tags - class_tags
             if removed_class_tags:
-                conn.executemany(
-                    "DELETE FROM constant_tags WHERE name = ?",
-                    [(tag,) for tag in removed_class_tags],
-                )
+                pass
 
         all_users = self.list_users()
         existing_usernames = {user["username"] for user in all_users}
         for user in all_users:
             username = user["username"]
-            membership_tags = memberships_by_user.get(username, set())
-            existing_tags = set(user.get("constant_tags", []))
-            non_class_tags = [tag for tag in existing_tags if tag not in class_tags]
-            desired_tags = sorted(set(non_class_tags) | membership_tags)
-            if sorted(existing_tags) != desired_tags:
-                self.update_user_constant_tags(username, desired_tags)
             remote_real_name = real_name_by_user.get(username)
             if remote_real_name and remote_real_name != (user.get("real_name") or ""):
                 try:
@@ -1878,11 +1807,9 @@ class DataStore:
                 self.create_user(
                     username=username,
                     password=uuid.uuid4().hex,
-                    constant_tags=sorted(tags),
                     real_name=real_name_by_user.get(username, ""),
                 )
             except ValueError:
-                self.update_user_constant_tags(username, sorted(tags))
                 display_name = real_name_by_user.get(username)
                 if display_name:
                     try:
@@ -1932,45 +1859,13 @@ class DataStore:
 
 
     def list_constant_tags(self) -> List[str]:
-        conn = self._conn()
-        rows = conn.execute("SELECT name FROM constant_tags ORDER BY name").fetchall()
-        return [row["name"] for row in rows]
+        return []
 
     def add_constant_tag(self, tag: str) -> bool:
-        name = (tag or "").strip()
-        if not name:
-            raise ValueError("标签名称不能为空")
-        conn = self._conn()
-        with conn:
-            result = conn.execute(
-                "INSERT OR IGNORE INTO constant_tags (name) VALUES (?)",
-                (name,),
-            )
-        return result.rowcount > 0
+        return False
 
     def remove_constant_tag(self, tag: str) -> None:
-        name = (tag or "").strip()
-        if not name:
-            raise ValueError("未指定标签")
-        conn = self._conn()
-        with conn:
-            rows = conn.execute("SELECT username, constant_tags FROM users").fetchall()
-            blocking = conn.execute(
-                "SELECT 1 FROM class_groups WHERE tag = ?",
-                (name,),
-            ).fetchone()
-            if blocking:
-                raise ValueError("不能删除同步的班级固定标签")
-            conn.execute("DELETE FROM constant_tags WHERE name = ?", (name,))
-        updates: List[tuple[str, List[str]]] = []
-        for row in rows:
-            tags = self._deserialize_tags(row["constant_tags"])
-            if name not in tags:
-                continue
-            remaining = [item for item in tags if item != name]
-            updates.append((row["username"], remaining))
-        for username, remaining in updates:
-            self.update_user_constant_tags(username, remaining)
+        return
 
     def _ensure_category_exists(self, conn: sqlite3.Connection, tag: str) -> None:
         name = (tag or "").strip()

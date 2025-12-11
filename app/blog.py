@@ -256,7 +256,7 @@ def _decorate_post(
     decorated["author_username"] = post.get("author")
     decorated["author_real_name"] = record.get("real_name", "") if record else ""
     decorated["author_display"] = decorated["author_real_name"] or decorated["author_username"]
-    decorated["author_constant_tags"] = record.get("constant_tags", []) if record else []
+    decorated["author_constant_tags"] = []
     decorated["category_tag"] = post.get("category_tag") or DEFAULT_CATEGORY_TAG
     decorated["class_tag"] = post.get("class_tag") or DEFAULT_CLASS_TAG
     decorated["favorite_count"] = post.get("favorite_count", 0)
@@ -386,7 +386,7 @@ def create():
             content=content,
             category_tag=category_value,
             class_tag=class_value,
-            author_constant_tags=getattr(current_user, "constant_tags", []),
+            author_constant_tags=None,
         )
         flash("文章创建成功", "success")
         title_display = title if len(title) <= 40 else title[:37] + "…"
@@ -547,9 +547,9 @@ def edit(post_id: str):
     current_category = post.get("category_tag") or (category_tags[0] if category_tags else DEFAULT_CATEGORY_TAG)
     current_class = post.get("class_tag") or (class_tags[0]["name"] if class_tags else DEFAULT_CLASS_TAG)
     author_record = datastore.get_user(post["author"]) or {}
-    author_constant_tags = set(author_record.get("constant_tags", []))
+    author_constant_tags: Set[str] = set()
     existing_tags = set(post.get("tags", []))
-    extra_tags = existing_tags - author_constant_tags - {current_category, current_class}
+    extra_tags = existing_tags - {current_category, current_class}
 
     if request.method == "POST":
         title = request.form.get("title", "").strip()
@@ -569,7 +569,6 @@ def edit(post_id: str):
                 content=content,
                 category_tag=category_value,
                 class_tag=class_value,
-                author_constant_tags=author_constant_tags,
             )
             flash("文章已更新", "success")
             title_display = title if len(title) <= 40 else title[:37] + "…"
@@ -587,7 +586,6 @@ def edit(post_id: str):
         content=post.get("content", ""),
         post_id=post_id,
         error=None,
-        author_constant_tags=list(author_constant_tags),
         extra_tags=list(extra_tags),
     )
 

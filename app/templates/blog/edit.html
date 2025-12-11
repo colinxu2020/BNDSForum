@@ -145,19 +145,6 @@
             </div>
         </div>
 
-        {% set constant_list = author_constant_tags if author_constant_tags is defined else current_user.constant_tags %}
-        <div class="form-field">
-            <label>自动附加标签</label>
-            <div class="tag-collection">
-                {% for tag in constant_list %}
-                    <span class="tag-badge">{{ tag }}</span>
-                {% else %}
-                    <span class="tag-badge muted">暂无固定标签</span>
-                {% endfor %}
-            </div>
-            <p class="field-hint">系统会自动附加上方固定标签，无需手动选择。</p>
-        </div>
-
         {% if extra_tags is defined and extra_tags %}
             <div class="form-field">
                 <label>额外附加标签</label>

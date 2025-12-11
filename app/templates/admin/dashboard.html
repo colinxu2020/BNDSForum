@@ -3,7 +3,7 @@
 {% block content %}
 <section class="card admin-hero">
     <h1>管理后台</h1>
-    <p class="form-tip">维护类别与班级标签；固定标签与用户管理入口保持可用。班级标签会在前台自动按需同步。</p>
+    <p class="form-tip">维护类别与班级标签；班级标签会在前台自动按需同步。</p>
     <div class="action-group">
         <a class="button ghost" href="{{ url_for('admin.user_list') }}">用户管理</a>
         <a class="button ghost" href="{{ url_for('admin.export_posts') }}">导出博客 Markdown</a>
@@ -78,31 +78,6 @@
 </section>
 
 <section class="grid two-column">
-    <div class="card">
-        <h2>固定标签</h2>
-        <p class="form-tip">分配给用户后，系统会自动附加到 TA 的所有文章。</p>
-        <form class="form-inline" method="post" action="{{ url_for('admin.add_constant_tag') }}">
-            <label class="sr-only" for="constant_tag_name">新增固定标签</label>
-            <input type="text" id="constant_tag_name" name="tag_name" placeholder="输入固定标签" required>
-            <button type="submit" class="button primary">添加</button>
-        </form>
-        {% if constant_tags %}
-            <ul class="tag-manage-list">
-                {% for tag in constant_tags %}
-                    <li>
-                        <span>{{ tag }}</span>
-                        <form method="post" action="{{ url_for('admin.delete_constant_tag') }}" onsubmit="return confirm('确定删除该固定标签并移除所有关联吗？');">
-                            <input type="hidden" name="tag_name" value="{{ tag }}">
-                            <button type="submit" class="button danger ghost">删除</button>
-                        </form>
-                    </li>
-                {% endfor %}
-            </ul>
-        {% else %}
-            <p class="empty-state">暂无固定标签。</p>
-        {% endif %}
-    </div>
-
     <div class="card">
         <h2>用户概况</h2>
         <p>当前共有 {{ users | length }} 位用户。</p>

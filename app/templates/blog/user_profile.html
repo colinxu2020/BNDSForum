@@ -33,17 +33,6 @@
                 <p>{{ display_name }}</p>
             {% endif %}
         </div>
-        <div>
-            <h2>固定标签</h2>
-            <p class="muted-text">系统会自动为该用户的文章附加这些标签。</p>
-            <div class="tag-collection">
-                {% for tag in profile.get('constant_tags', []) %}
-                    <span class="tag-badge">{{ tag }}</span>
-                {% else %}
-                    <span class="tag-badge muted">暂无固定标签</span>
-                {% endfor %}
-            </div>
-        </div>
     </div>
 </section>
 
