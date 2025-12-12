@@ -209,15 +209,13 @@ def compute_node_stats(datastore: DataStore, tree: Dict):
         eligible_users = []
         required = set(tag_chain)
         for user in users:
-            user_constant = set(user.get("constant_tags", []))
-            available = user_constant | normal_tags
+            available = normal_tags
             if required.issubset(available):
                 eligible_users.append(
                     {
                         "username": user["username"],
                         "real_name": user.get("real_name", ""),
                         "has_post": datastore.user_has_post_with_tags(user["username"], tag_chain),
-                        "constant_tags": sorted(user_constant),
                     }
                 )
         eligible_users.sort(

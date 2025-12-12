@@ -756,20 +756,6 @@ class DataStore:
             is_banned=False,
         )
 
-    def update_user_constant_tags(self, username: str, constant_tags: Iterable[str]) -> None:
-        conn = self._conn()
-        with conn:
-            row = conn.execute(
-                "SELECT constant_tags FROM users WHERE username = ?",
-                (username,),
-            ).fetchone()
-            if not row:
-                raise ValueError("未找到用户")
-            conn.execute(
-                "UPDATE users SET constant_tags = json('[]') WHERE username = ?",
-                (username,),
-            )
-
     def set_user_role(self, username: str, role: str) -> None:
         conn = self._conn()
         with conn:
@@ -1882,18 +1868,6 @@ class DataStore:
 
         nodes["root"]["children"] = root_children
         return {"nodes": list(nodes.values())}
-
-    # Constant tags ---------------------------------------------------
-
-
-    def list_constant_tags(self) -> List[str]:
-        return []
-
-    def add_constant_tag(self, tag: str) -> bool:
-        return False
-
-    def remove_constant_tag(self, tag: str) -> None:
-        return
 
     def _ensure_category_exists(self, conn: sqlite3.Connection, tag: str) -> None:
         name = (tag or "").strip()

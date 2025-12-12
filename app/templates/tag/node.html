@@ -71,7 +71,6 @@
                 <thead>
                 <tr>
                     <th>真实姓名 / 用户名</th>
-                    <th>固定标签</th>
                     <th>是否已发布文章</th>
                 </tr>
                 </thead>
@@ -86,13 +85,6 @@
                                     {{ item["username"] }}
                                 {% endif %}
                             </a>
-                        </td>
-                        <td>
-                            {% if item["constant_tags"] %}
-                                {{ item["constant_tags"] | join(', ') }}
-                            {% else %}
-                                暂无
-                            {% endif %}
                         </td>
                         <td>{{ "是" if item["has_post"] else "否" }}</td>
                     </tr>
