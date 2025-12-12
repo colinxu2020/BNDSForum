@@ -1633,6 +1633,14 @@ class DataStore:
             )
         return result
 
+    def user_class_tags(self, username: str) -> List[str]:
+        conn = self._conn()
+        rows = conn.execute(
+            "SELECT class_tag FROM class_memberships WHERE username = ? ORDER BY class_tag",
+            (username,),
+        ).fetchall()
+        return [row["class_tag"] for row in rows]
+
     def update_class_groups_from_credentials(self, username: str, password: str) -> None:
         if not self._oj_client:
             return

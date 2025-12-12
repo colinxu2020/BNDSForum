@@ -47,10 +47,6 @@ def login():
             elif login_user(user):
                 _sync_class_groups_async(datastore, username, password)
                 try:
-                    datastore.sync_class_tags_from_oj()
-                except Exception:
-                    current_app.logger.exception("登录后同步班级标签失败")
-                try:
                     datastore.send_system_notification(f"用户 {username} 于 {utcnow_str()} 登录系统")
                 except Exception:
                     current_app.logger.exception("发送登录系统通知失败：%s", username)

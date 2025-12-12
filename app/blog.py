@@ -344,7 +344,9 @@ def index():
 def create():
     datastore = get_datastore()
     category_tags = datastore.list_category_tags()
-    class_tags = datastore.list_class_tags(with_meta=True, auto_sync=True)
+    class_tags_all = datastore.list_class_tags(with_meta=True, auto_sync=True)
+    user_memberships = set(datastore.user_class_tags(current_user.username))
+    class_tags = [item for item in class_tags_all if isinstance(item, dict) and item.get("name") in user_memberships]
     default_category = category_tags[0] if category_tags else DEFAULT_CATEGORY_TAG
     default_class = class_tags[0]["name"] if class_tags else DEFAULT_CLASS_TAG
     if request.method == "POST":
@@ -369,6 +371,8 @@ def create():
                 post_id=None,
             )
         if not category_value or not class_value:
+            if not class_tags:
+                flash("未检测到你的 OJ 班级，请登录后等待同步完成再发文。", "error")
             return render_template(
                 "blog/edit.html",
                 category_tags=category_tags,
@@ -378,6 +382,19 @@ def create():
                 title=title,
                 content=content,
                 error="请选择有效的类别标签和班级标签",
+                post_id=None,
+            )
+        if class_value not in user_memberships:
+            flash("班级标签必须选择为你在 OJ 小组中的班级。", "error")
+            return render_template(
+                "blog/edit.html",
+                category_tags=category_tags,
+                class_tags=class_tags,
+                selected_category=selected_category,
+                selected_class=selected_class,
+                title=title,
+                content=content,
+                error=None,
                 post_id=None,
             )
         datastore.create_post(
@@ -546,8 +563,8 @@ def edit(post_id: str):
     class_tags = datastore.list_class_tags(with_meta=True, auto_sync=True)
     current_category = post.get("category_tag") or (category_tags[0] if category_tags else DEFAULT_CATEGORY_TAG)
     current_class = post.get("class_tag") or (class_tags[0]["name"] if class_tags else DEFAULT_CLASS_TAG)
-    author_record = datastore.get_user(post["author"]) or {}
-    author_constant_tags: Set[str] = set()
+    user_memberships = set(datastore.user_class_tags(post["author"]))
+    class_tags = [item for item in class_tags if isinstance(item, dict) and item.get("name") in user_memberships]
     existing_tags = set(post.get("tags", []))
     extra_tags = existing_tags - {current_category, current_class}
 
@@ -563,6 +580,34 @@ def edit(post_id: str):
         if not title or not content:
             flash("标题和内容不能为空", "error")
         else:
+            if not user_memberships:
+                flash("未检测到你的 OJ 班级，请登录后等待同步完成再编辑。", "error")
+                return render_template(
+                    "blog/edit.html",
+                    category_tags=category_tags,
+                    class_tags=class_tags,
+                    selected_category=selected_category,
+                    selected_class=selected_class,
+                    title=title,
+                    content=content,
+                    post_id=post_id,
+                    error=None,
+                    extra_tags=list(extra_tags),
+                )
+            if class_value not in user_memberships:
+                flash("班级标签必须选择为你在 OJ 小组中的班级。", "error")
+                return render_template(
+                    "blog/edit.html",
+                    category_tags=category_tags,
+                    class_tags=class_tags,
+                    selected_category=selected_category,
+                    selected_class=selected_class,
+                    title=title,
+                    content=content,
+                    post_id=post_id,
+                    error=None,
+                    extra_tags=list(extra_tags),
+                )
             datastore.update_post(
                 post_id,
                 title=title,
