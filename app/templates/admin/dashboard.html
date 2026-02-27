@@ -54,15 +54,6 @@
                     {% set source = tag.source if tag.source is defined else tag['source'] %}
                     <li>
                         <span>{{ name }}</span>
-                        <span class="muted-text">
-                            {% if source == 'oj' %}
-                                · OJ 同步
-                            {% elif source == 'builtin' %}
-                                · 默认
-                            {% else %}
-                                · 手动
-                            {% endif %}
-                        </span>
                         {% if source != 'oj' and source != 'builtin' %}
                             <form method="post" action="{{ url_for('admin.delete_class_tag') }}" onsubmit="return confirm('删除后班级标签将不可选，确定吗？');">
                                 <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">

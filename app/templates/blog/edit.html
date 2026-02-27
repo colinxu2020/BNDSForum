@@ -133,11 +133,6 @@
                     <label class="chip-option">
                         <input type="radio" name="class_tag" value="{{ name }}" {% if name == selected_class %}checked{% endif %}>
                         <span>{{ name }}</span>
-                        {% if source == 'oj' %}
-                            <span class="pill-badge">OJ 同步</span>
-                        {% elif source == 'builtin' %}
-                            <span class="pill-badge">默认</span>
-                        {% endif %}
                         <span class="pill-sheen"></span>
                     </label>
                 {% else %}

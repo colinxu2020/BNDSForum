@@ -337,11 +337,6 @@
                         <label class="tag-pill">
                             <input type="checkbox" name="class_tag" value="{{ name }}" {% if name in filters.class_tags %}checked{% endif %}>
                             <span>{{ name }}</span>
-                            {% if source == 'oj' %}
-                                <span class="pill-badge">OJ 同步</span>
-                            {% elif source == 'builtin' %}
-                                <span class="pill-badge">默认</span>
-                            {% endif %}
                             <span class="pill-sheen"></span>
                         </label>
                     {% else %}
