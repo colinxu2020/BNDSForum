@@ -236,7 +236,10 @@ class PerformanceTest:
 
         for original, backup in self._backup_entries:
             if backup.exists():
-                shutil.copy2(backup, original)
+                try:
+                    shutil.copy2(backup, original)
+                except Exception:
+                    print(f'还原操作失败！')
                 print(f"[还原] {original.name} 已从 {backup.name} 恢复")
             elif original.exists():
                 original.unlink()
