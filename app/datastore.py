@@ -21,6 +21,7 @@ from .oj_client import (
     OJGroup,
     OJGroupMember,
     OJInvalidCredentials,
+    OJLoginError,
     OJServiceUnavailable,
     OJUserInfo,
     OnlineJudgeClient,
@@ -234,6 +235,7 @@ class DataStore:
                     updated_at TEXT NOT NULL,
                     category_tag TEXT NOT NULL DEFAULT '',
                     class_tag TEXT NOT NULL DEFAULT '',
+                    is_hidden INTEGER NOT NULL DEFAULT 0,
                     FOREIGN KEY(author) REFERENCES users(username) ON DELETE CASCADE
                 );
 
@@ -367,6 +369,14 @@ class DataStore:
                 conn.execute("ALTER TABLE posts ADD COLUMN category_tag TEXT NOT NULL DEFAULT ''")
             if "class_tag" not in post_columns:
                 conn.execute("ALTER TABLE posts ADD COLUMN class_tag TEXT NOT NULL DEFAULT ''")
+            if "is_hidden" not in post_columns:
+                conn.execute("ALTER TABLE posts ADD COLUMN is_hidden INTEGER NOT NULL DEFAULT 0")
+            post_columns = {
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(posts)")
+            }
+            if "is_hidden" in post_columns:
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_posts_hidden ON posts(is_hidden)")
 
     def _ensure_root_node(self, conn: sqlite3.Connection) -> None:
         with conn:
@@ -813,6 +823,32 @@ class DataStore:
             return self._verify_local_credentials(username, password)
         return None
 
+    def verify_user_with_cookie(self, username: str, phpsessid: str) -> Optional[User]:
+        if not phpsessid:
+            return None
+        if self._oj_client:
+            try:
+                remote_user = self._oj_client.authenticate_with_cookie(username, phpsessid)
+            except OJInvalidCredentials:
+                return None
+            except (OJAccountNotFound, OJServiceUnavailable):
+                return None
+            else:
+                return self._upsert_remote_user_cookie(remote_user)
+        return None
+
+    def resolve_username_from_cookie(self, phpsessid: str) -> Optional[str]:
+        if not phpsessid:
+            return None
+        if not self._oj_client:
+            return None
+        try:
+            return self._oj_client.resolve_username_from_cookie(phpsessid)
+        except OJLoginError:
+            return None
+        except OJServiceUnavailable:
+            return None
+
     def _verify_local_credentials(self, username: str, password: str) -> Optional[User]:
         record = self.get_user(username)
         if not record:
@@ -867,13 +903,53 @@ class DataStore:
             is_banned=is_banned,
         )
 
+    def _upsert_remote_user_cookie(self, remote_user: OJUserInfo) -> User:
+        conn = self._conn()
+        password_hash = generate_password_hash(secrets.token_hex(16))
+        with conn:
+            existing = conn.execute(
+                "SELECT username, role, constant_tags, real_name, is_banned, password_hash FROM users WHERE username = ?",
+                (remote_user.username,),
+            ).fetchone()
+            if existing:
+                password_hash = existing["password_hash"] or password_hash
+                conn.execute(
+                    "UPDATE users SET real_name = ? WHERE username = ?",
+                    (remote_user.real_name, remote_user.username),
+                )
+                constant_tags = self._deserialize_tags(existing["constant_tags"])
+                role = existing["role"]
+                is_banned = bool(existing["is_banned"])
+            else:
+                conn.execute(
+                    "INSERT INTO users (username, password_hash, role, constant_tags, real_name) VALUES (?, ?, ?, ?, ?)",
+                    (
+                        remote_user.username,
+                        password_hash,
+                        "user",
+                        json.dumps([], ensure_ascii=False),
+                        remote_user.real_name,
+                    ),
+                )
+                constant_tags = []
+                role = "user"
+                is_banned = False
+        return User(
+            username=remote_user.username,
+            password_hash=password_hash,
+            role=role,
+            constant_tags=constant_tags,
+            real_name=remote_user.real_name,
+            is_banned=is_banned,
+        )
+
     # Posts ------------------------------------------------------------
 
     def list_posts(self) -> List[Dict[str, Any]]:
         conn = self._conn()
         rows = conn.execute(
             """
-            SELECT id, author, title, content, created_at, updated_at, category_tag, class_tag
+            SELECT id, author, title, content, created_at, updated_at, category_tag, class_tag, is_hidden
             FROM posts
             ORDER BY created_at DESC
             """
@@ -902,7 +978,7 @@ class DataStore:
             where = "WHERE " + " AND ".join(clauses)
         rows = conn.execute(
             f"""
-            SELECT id, author, title, content, created_at, updated_at, category_tag, class_tag
+            SELECT id, author, title, content, created_at, updated_at, category_tag, class_tag, is_hidden
             FROM posts
             {where}
             ORDER BY created_at DESC
@@ -915,7 +991,7 @@ class DataStore:
         conn = self._conn()
         row = conn.execute(
             """
-            SELECT id, author, title, content, created_at, updated_at, category_tag, class_tag
+            SELECT id, author, title, content, created_at, updated_at, category_tag, class_tag, is_hidden
             FROM posts
             WHERE id = ?
             """,
@@ -935,6 +1011,7 @@ class DataStore:
         class_tag: str,
         extra_tags: Optional[Iterable[str]] = None,
         author_constant_tags: Optional[Iterable[str]] = None,
+        is_hidden: bool = False,
     ) -> Dict[str, Any]:
         conn = self._conn()
         post_id = uuid.uuid4().hex
@@ -948,10 +1025,10 @@ class DataStore:
         with conn:
             conn.execute(
                 """
-                INSERT INTO posts (id, author, title, content, created_at, updated_at, category_tag, class_tag)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO posts (id, author, title, content, created_at, updated_at, category_tag, class_tag, is_hidden)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (post_id, author, title, content, timestamp, timestamp, category, class_value),
+                (post_id, author, title, content, timestamp, timestamp, category, class_value, 1 if is_hidden else 0),
             )
             self._ensure_category_exists(conn, category)
             self._ensure_class_exists(conn, class_value)
@@ -967,6 +1044,7 @@ class DataStore:
             "created_at": timestamp,
             "updated_at": timestamp,
             "comments": [],
+            "is_hidden": bool(is_hidden),
         }
 
     def update_post(
@@ -979,6 +1057,7 @@ class DataStore:
         class_tag: Optional[str] = None,
         extra_tags: Optional[Iterable[str]] = None,
         author_constant_tags: Optional[Iterable[str]] = None,
+        is_hidden: Optional[bool] = None,
     ) -> Dict[str, Any]:
         conn = self._conn()
         existing = self.get_post(post_id)
@@ -1011,6 +1090,9 @@ class DataStore:
         if class_tag is not None:
             updates.append("class_tag = ?")
             params.append(new_class)
+        if is_hidden is not None:
+            updates.append("is_hidden = ?")
+            params.append(1 if is_hidden else 0)
         should_update_tags = extra_tags is not None or category_tag is not None or class_tag is not None
         should_touch = bool(updates) or should_update_tags
         if should_touch:
@@ -1100,7 +1182,7 @@ class DataStore:
         conn = self._conn()
         rows = conn.execute(
             """
-            SELECT p.id, p.author, p.title, p.content, p.created_at, p.updated_at, p.category_tag, p.class_tag, pf.created_at AS favorited_at
+            SELECT p.id, p.author, p.title, p.content, p.created_at, p.updated_at, p.category_tag, p.class_tag, pf.created_at AS favorited_at, p.is_hidden
             FROM post_favorites AS pf
             JOIN posts AS p ON pf.post_id = p.id
             WHERE pf.username = ?
@@ -1659,12 +1741,49 @@ class DataStore:
         finally:
             self._release_class_sync_lock()
 
+    def update_class_groups_from_cookie(self, username: str, phpsessid: str) -> None:
+        if not self._oj_client:
+            return
+        now = datetime.now(timezone.utc)
+        if not self._try_acquire_class_sync_lock(now):
+            return
+        try:
+            groups = self._fetch_groups_with_retry_cookie(phpsessid)
+            if self._sync_class_groups(groups):
+                self._set_metadata_value("class_sync_last_run", now.strftime(ISO_FORMAT))
+        except OJInvalidCredentials:
+            return
+        except OJServiceUnavailable as exc:
+            self.send_system_notification(f"班级同步失败：无法访问 BNDSOJ（{exc}）。")
+            return
+        finally:
+            self._release_class_sync_lock()
+
     def _fetch_groups_with_retry(self, username: str, password: str, *, retries: int = 3, delay: float = 0.8) -> List[OJGroup]:
         attempt = 0
         last_error: Exception | None = None
         while attempt < max(1, retries):
             try:
                 return self._oj_client.fetch_groups(username, password)
+            except OJServiceUnavailable as exc:
+                last_error = exc
+                attempt += 1
+                if attempt >= retries:
+                    break
+                time.sleep(delay)
+            except Exception as exc:
+                last_error = exc
+                break
+        if last_error:
+            raise last_error
+        return []
+
+    def _fetch_groups_with_retry_cookie(self, phpsessid: str, *, retries: int = 3, delay: float = 0.8) -> List[OJGroup]:
+        attempt = 0
+        last_error: Exception | None = None
+        while attempt < max(1, retries):
+            try:
+                return self._oj_client.fetch_groups_with_cookie(phpsessid)
             except OJServiceUnavailable as exc:
                 last_error = exc
                 attempt += 1
@@ -2053,7 +2172,7 @@ class DataStore:
         placeholders = ",".join(["?"] * len(tags))
         rows = conn.execute(
             f"""
-            SELECT p.id, p.author, p.title, p.content, p.created_at, p.updated_at, p.category_tag, p.class_tag
+            SELECT p.id, p.author, p.title, p.content, p.created_at, p.updated_at, p.category_tag, p.class_tag, p.is_hidden
             FROM posts AS p
             JOIN post_tags AS pt ON p.id = pt.post_id
             WHERE pt.tag IN ({placeholders})
@@ -2123,6 +2242,7 @@ class DataStore:
                     "updated_at": row["updated_at"],
                     "comments": comments_map.get(post_id, []),
                     "favorite_count": favorite_counts.get(post_id, 0),
+                    "is_hidden": bool(row["is_hidden"]) if "is_hidden" in row.keys() else False,
                 }
             )
         return posts

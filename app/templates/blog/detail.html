@@ -32,6 +32,9 @@
             </span>
             <span>发布：{{ post['created_at'] | friendly_time }}</span>
             <span>更新：{{ post['updated_at'] | friendly_time }}</span>
+            {% if post['is_hidden'] %}
+                <span class="tag-badge">已隐藏</span>
+            {% endif %}
         </div>
         {% set extra_tags = post['tags'] | reject("equalto", post['category_tag']) | reject("equalto", post['class_tag']) | list %}
         {% if extra_tags %}

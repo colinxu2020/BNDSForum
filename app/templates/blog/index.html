@@ -194,6 +194,19 @@
             margin-bottom: 10px;
         }
 
+        .pagination {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 4px;
+            flex-wrap: wrap;
+        }
+
+        .pagination .page-info {
+            color: #475569;
+            font-weight: 600;
+        }
+
         .post-badges {
             display: flex;
             gap: 8px;
@@ -388,6 +401,9 @@
                         <div class="post-badges">
                             <span class="badge category">类别 · {{ post['category_tag'] }}</span>
                             <span class="badge class">班级 · {{ post['class_tag'] }}</span>
+                            {% if post['is_hidden'] %}
+                                <span class="badge meta">已隐藏</span>
+                            {% endif %}
                         </div>
                         <h2><a href="{{ url_for('blog.detail', post_id=post['id']) }}">{{ post['title'] }}</a></h2>
                         <div class="post-meta">
@@ -405,6 +421,17 @@
                     </div>
                 </article>
             {% endfor %}
+            {% if pagination.total_pages > 1 %}
+                <nav class="pagination" aria-label="分页导航">
+                    <span class="page-info">第 {{ pagination.page }} / {{ pagination.total_pages }} 页</span>
+                    {% if pagination.has_prev %}
+                        <a class="button secondary" href="{{ pagination.prev_url }}">上一页</a>
+                    {% endif %}
+                    {% if pagination.has_next %}
+                        <a class="button secondary" href="{{ pagination.next_url }}">下一页</a>
+                    {% endif %}
+                </nav>
+            {% endif %}
         {% else %}
             <div class="empty-highlight">
                 <p class="muted-text">还没有符合条件的文章，试试调整筛选或发布第一篇吧。</p>

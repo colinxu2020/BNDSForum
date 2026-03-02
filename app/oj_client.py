@@ -4,6 +4,7 @@ import html
 import os
 import re
 import time
+from urllib.parse import urlparse
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, Set
 
@@ -70,6 +71,7 @@ class OnlineJudgeClient:
     _CSRF_RE = re.compile(r'name="_csrf"\s+value="([^"]+)"')
     _TITLE_RE = re.compile(r"<title>(.*?)</title>", re.S)
     _GROUP_LINK_RE = re.compile(r"/group/(?:index|view)?/?(\d+)[^>]*>([^<]+)<", re.I)
+    _LOGIN_FORM_RE = re.compile(r"LoginForm\[username\]|LoginForm\[password\]", re.I)
 
     def __init__(
         self,
@@ -154,8 +156,34 @@ class OnlineJudgeClient:
         finally:
             session.close()
 
+    def authenticate_with_cookie(self, username: str, phpsessid: str) -> OJUserInfo:
+        session = self._session_with_cookie(phpsessid)
+        try:
+            return self._fetch_profile(session, username)
+        finally:
+            session.close()
+
+    def resolve_username_from_cookie(self, phpsessid: str) -> Optional[str]:
+        if not phpsessid:
+            return None
+        session = self._session_with_cookie(phpsessid)
+        try:
+            profile_href = self._locate_profile_link(session)
+            if not profile_href:
+                return None
+            return self._scrape_username_from_profile(session, profile_href)
+        finally:
+            session.close()
+
     def fetch_groups(self, username: str, password: str) -> List[OJGroup]:
         session = self._login_session(username, password)
+        try:
+            return self._scrape_groups(session)
+        finally:
+            session.close()
+
+    def fetch_groups_with_cookie(self, phpsessid: str) -> List[OJGroup]:
+        session = self._session_with_cookie(phpsessid)
         try:
             return self._scrape_groups(session)
         finally:
@@ -219,6 +247,8 @@ class OnlineJudgeClient:
 
         if profile_resp.status_code == 404:
             raise OJServiceUnavailable("OJ 返回 404，无法获取用户资料")
+        if self._is_login_page(profile_resp.text) or profile_resp.url.endswith(self.LOGIN_PATH):
+            raise OJInvalidCredentials("Cookie 或登录状态已失效")
 
         real_name = self._extract_title(profile_resp.text) or username
         return OJUserInfo(username=username, real_name=real_name.strip() or username)
@@ -240,6 +270,17 @@ class OnlineJudgeClient:
             return path
         return f"{self.base_url}{path}"
 
+    def _session_with_cookie(self, phpsessid: str) -> Session:
+        session = self._build_session()
+        domain = urlparse(self.base_url).hostname or "onlinejudge.bnds.cn"
+        session.cookies.set("PHPSESSID", phpsessid, domain=domain)
+        return session
+
+    def _is_login_page(self, html_text: str) -> bool:
+        if not html_text:
+            return False
+        return bool(self._LOGIN_FORM_RE.search(html_text))
+
     def _scrape_groups(self, session: Session) -> List[OJGroup]:
         try:
             index_resp = session.get(
@@ -253,6 +294,8 @@ class OnlineJudgeClient:
             raise OJServiceUnavailable("拉取小组列表失败") from exc
         if index_resp.status_code != 200:
             raise OJServiceUnavailable("无法获取小组列表页面")
+        if self._is_login_page(index_resp.text) or index_resp.url.endswith(self.LOGIN_PATH):
+            raise OJInvalidCredentials("需要登录才能访问小组列表")
 
         soup = BeautifulSoup(index_resp.text, "html.parser")
         groups: List[Tuple[str, str]] = []
@@ -366,14 +409,61 @@ class OnlineJudgeClient:
 
         return (members, success)
 
+    def _scrape_username_from_profile(self, session: Session, href: str) -> Optional[str]:
+        target = self._url(href)
+        try:
+            resp = session.get(target, timeout=self.timeout, verify=self.verify_ssl)
+        except SSLError as exc:
+            raise OJServiceUnavailable("无法建立到 OJ 的安全连接") from exc
+        except RequestException:
+            return None
+        if resp.status_code != 200 or self._is_login_page(resp.text):
+            return None
+        soup = BeautifulSoup(resp.text, "html.parser")
+        cell = soup.select_one("#w0 > tbody > tr:nth-child(1) > td")
+        if cell:
+            text = cell.get_text(strip=True)
+            if text:
+                return text
+        for row in soup.select("#w0 tr"):
+            header = row.select_one("th")
+            value = row.select_one("td")
+            if not header or not value:
+                continue
+            if header.get_text(strip=True) == "用户名":
+                text = value.get_text(strip=True)
+                if text:
+                    return text
+        return None
+
+    def _locate_profile_link(self, session: Session) -> Optional[str]:
+        candidate_paths = ["/", "/site/index", "/user/index"]
+        for path in candidate_paths:
+            try:
+                resp = session.get(self._url(path), timeout=self.timeout, verify=self.verify_ssl)
+            except SSLError:
+                continue
+            except RequestException:
+                continue
+            if resp.status_code != 200 or self._is_login_page(resp.text):
+                continue
+            soup = BeautifulSoup(resp.text, "html.parser")
+            anchor = soup.select_one("#w1 > li:nth-child(1) > a[href]")
+            if not anchor:
+                continue
+            href = anchor.get("href", "").strip()
+            if href:
+                return href
+        return None
+
     def _resolve_user_identity(
         self,
         session: Session,
         user_id: str,
-        cache: Dict[str, Tuple[str, str]],
-    ) -> Tuple[str, str]:
-        if user_id in cache:
-            return cache[user_id]
+        user_cache: Dict[str, Tuple[str, str]],
+    ) -> Tuple[str | None, str]:
+        if user_id in user_cache:
+            return user_cache[user_id]
         try:
             resp = session.get(
                 self._url(f"/user/view?id={user_id}"),
@@ -385,13 +475,13 @@ class OnlineJudgeClient:
         except RequestException as exc:
             raise OJServiceUnavailable(f"加载用户 {user_id} 信息失败") from exc
         if resp.status_code != 200:
-            cache[user_id] = ("", "")
+            user_cache[user_id] = ("", "")
             return "", ""
         soup = BeautifulSoup(resp.text, "html.parser")
         username = self._extract_detail_value(soup, "用户名")
         nickname = self._extract_detail_value(soup, "昵称")
-        cache[user_id] = (username or "", nickname or "")
-        return cache[user_id]
+        user_cache[user_id] = (username or "", nickname or "")
+        return user_cache[user_id]
 
     def _extract_detail_value(self, soup: BeautifulSoup, label: str) -> Optional[str]:
         header = soup.find("th", string=label)

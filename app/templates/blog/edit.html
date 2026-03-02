@@ -152,6 +152,14 @@
             </div>
         {% endif %}
 
+        <div class="form-field">
+            <label class="checkbox">
+                <input type="checkbox" name="is_hidden" value="1" {% if is_hidden %}checked{% endif %}>
+                <span>隐藏文章（仅作者可见，不出现在首页）</span>
+            </label>
+            <p class="form-tip">可随时在此处取消隐藏，重新对外可见。</p>
+        </div>
+
         <div class="form-actions">
             <button type="submit" class="button primary">保存</button>
             <a class="button ghost" href="{{ url_for('blog.index') }}">返回列表</a>

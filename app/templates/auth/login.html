@@ -4,20 +4,33 @@
 <section class="card form-card narrow">
     <header class="form-header">
         <h1>欢迎回来</h1>
-        <p class="form-tip">输入账号密码即可开始创作或留言。</p>
+        <p class="form-tip">输入账号密码或 PHPSESSID Cookie，即可开始创作或留言。</p>
     </header>
     <form method="post" class="form-grid">
         <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
         <div class="form-field">
             <label for="username">用户名</label>
-            <input type="text" id="username" name="username" autocomplete="username" required>
+            <input type="text" id="username" name="username" autocomplete="username" value="{{ resolved_username or '' }}" placeholder="若使用 Cookie 登录可留空，将自动读取">
+            {% if resolved_username %}
+                <p class="form-tip">已从 BNDSOJ 自动获取用户名：{{ resolved_username }}。</p>
+            {% else %}
+                <p class="form-tip">使用密码登录时需要填写用户名；使用 PHPSESSID 可自动识别。</p>
+            {% endif %}
         </div>
         <div class="form-field">
-            <label for="password">密码</label>
-            <input type="password" id="password" name="password" autocomplete="current-password" required>
+            <label for="password">密码（可选）</label>
+            <input type="password" id="password" name="password" autocomplete="current-password">
+        </div>
+        <div class="form-field">
+            <label for="phpsessid">PHPSESSID Cookie（可选）</label>
+            <input type="text" id="phpsessid" name="phpsessid" placeholder="从浏览器的在线评测 Cookie 中复制" autocomplete="off">
+            <p class="form-tip">若填写 Cookie，可不输入密码。Cookie 会直接用于 BNDSOJ 验证并同步班级。</p>
         </div>
         <div class="form-actions">
             <button type="submit" class="button primary">登录</button>
+            {% if has_phpsessid_cookie %}
+                <button type="submit" name="use_cookie_login" value="1" class="button secondary">使用 BNDSOJ 单点登录</button>
+            {% endif %}
             <span class="muted-text">注册已关闭，如需开通请联系管理员。</span>
         </div>
     </form>

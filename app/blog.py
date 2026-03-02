@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timezone
+from math import ceil
 from typing import Any, Dict, Optional, Set, Tuple
+from urllib.parse import urlencode
 
 from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
@@ -260,6 +262,7 @@ def _decorate_post(
     decorated["category_tag"] = post.get("category_tag") or DEFAULT_CATEGORY_TAG
     decorated["class_tag"] = post.get("class_tag") or DEFAULT_CLASS_TAG
     decorated["favorite_count"] = post.get("favorite_count", 0)
+    decorated["is_hidden"] = bool(post.get("is_hidden", False))
     if favorite_post_ids is not None:
         decorated["is_favorited"] = post.get("id") in favorite_post_ids
     else:
@@ -275,6 +278,13 @@ def _decorate_comment(comment: dict, user_map: dict[str, dict[str, object]]) -> 
     return decorated
 
 
+def _can_view_post(post: dict) -> bool:
+    if not post.get("is_hidden"):
+        return True
+    if not current_user.is_authenticated:
+        return False
+    return bool(current_user.is_admin or post.get("author") == current_user.username)
+
 @bp.route("/")
 def index():
     datastore = get_datastore()
@@ -282,6 +292,13 @@ def index():
     class_tags_meta = datastore.list_class_tags(with_meta=True, auto_sync=True)
     category_lookup = {tag.lower(): tag for tag in category_tags}
     class_lookup = {item["name"].lower(): item["name"] for item in class_tags_meta if isinstance(item, dict)}
+
+    try:
+        page = int(request.args.get("page", "1"))
+    except ValueError:
+        page = 1
+    page = max(page, 1)
+    per_page = 10
 
     selected_category = (request.args.get("category") or "").strip()
     if selected_category:
@@ -319,13 +336,41 @@ def index():
                 filtered.append(post)
         raw_posts = filtered
 
+    raw_posts = [post for post in raw_posts if _can_view_post(post)]
+
+    total_posts = len(raw_posts)
+    total_pages = max(1, ceil(total_posts / per_page)) if total_posts else 1
+    if page > total_pages:
+        page = total_pages
+    start = (page - 1) * per_page
+    end = start + per_page
+    page_posts = raw_posts[start:end]
+
     favorite_post_ids: Set[str] = set()
     if current_user.is_authenticated:
         favorite_post_ids = datastore.favorite_post_ids(
             current_user.username,
-            [post["id"] for post in raw_posts],
+            [post["id"] for post in page_posts],
         )
-    posts = [_decorate_post(post, user_map, favorite_post_ids) for post in raw_posts]
+    posts = [_decorate_post(post, user_map, favorite_post_ids) for post in page_posts]
+
+    query_args = request.args.to_dict(flat=False)
+
+    def _page_url(page_num: int) -> str:
+        params = {**query_args, "page": [str(page_num)]}
+        return f"{url_for('blog.index')}?{urlencode(params, doseq=True)}"
+
+    pagination = {
+        "page": page,
+        "per_page": per_page,
+        "total": total_posts,
+        "total_pages": total_pages,
+        "has_prev": page > 1,
+        "has_next": page < total_pages,
+        "prev_url": _page_url(page - 1) if page > 1 else None,
+        "next_url": _page_url(page + 1) if page < total_pages else None,
+    }
+
     return render_template(
         "blog/index.html",
         posts=posts,
@@ -336,6 +381,7 @@ def index():
             "class_tags": selected_class_tags,
             "keyword": keyword,
         },
+        pagination=pagination,
     )
 
 
@@ -369,6 +415,7 @@ def create():
                 content=content,
                 error="标题和内容不能为空",
                 post_id=None,
+                is_hidden=bool(request.form.get("is_hidden")),
             )
         if not category_value or not class_value:
             if not class_tags:
@@ -383,6 +430,7 @@ def create():
                 content=content,
                 error="请选择有效的类别标签和班级标签",
                 post_id=None,
+                is_hidden=bool(request.form.get("is_hidden")),
             )
         if class_value not in user_memberships:
             flash("班级标签必须选择为你在 OJ 小组中的班级。", "error")
@@ -396,6 +444,7 @@ def create():
                 content=content,
                 error=None,
                 post_id=None,
+                is_hidden=bool(request.form.get("is_hidden")),
             )
         datastore.create_post(
             author=current_user.username,
@@ -404,6 +453,7 @@ def create():
             category_tag=category_value,
             class_tag=class_value,
             author_constant_tags=None,
+            is_hidden=bool(request.form.get("is_hidden")),
         )
         flash("文章创建成功", "success")
         title_display = title if len(title) <= 40 else title[:37] + "…"
@@ -419,6 +469,7 @@ def create():
         content="",
         post_id=None,
         error=None,
+        is_hidden=False,
     )
 
 
@@ -435,6 +486,8 @@ def detail(post_id: str):
     datastore = get_datastore()
     post = datastore.get_post(post_id)
     if not post:
+        abort(404)
+    if not _can_view_post(post):
         abort(404)
     if request.method == "POST":
         if not current_user.is_authenticated:
@@ -475,6 +528,8 @@ def favorite(post_id: str):
     if not post:
         flash("未找到文章，无法进行收藏操作", "error")
         return redirect(url_for("blog.index"))
+    if not _can_view_post(post):
+        abort(404)
     title_display = post.get("title", "")
     title_display = title_display if len(title_display) <= 40 else title_display[:37] + "…"
     action = (request.form.get("action") or "add").strip().lower()
@@ -511,6 +566,7 @@ def favorites():
     datastore = get_datastore()
     user_map = _user_lookup(datastore)
     raw_posts = datastore.list_favorite_posts(current_user.username)
+    raw_posts = [post for post in raw_posts if _can_view_post(post)]
     favorite_post_ids = {post["id"] for post in raw_posts}
     posts = [_decorate_post(post, user_map, favorite_post_ids) for post in raw_posts]
     return render_template(
@@ -567,6 +623,7 @@ def edit(post_id: str):
     class_tags = [item for item in class_tags if isinstance(item, dict) and item.get("name") in user_memberships]
     existing_tags = set(post.get("tags", []))
     extra_tags = existing_tags - {current_category, current_class}
+    hidden_flag = bool(post.get("is_hidden"))
 
     if request.method == "POST":
         title = request.form.get("title", "").strip()
@@ -593,6 +650,7 @@ def edit(post_id: str):
                     post_id=post_id,
                     error=None,
                     extra_tags=list(extra_tags),
+                    is_hidden=bool(request.form.get("is_hidden")),
                 )
             if class_value not in user_memberships:
                 flash("班级标签必须选择为你在 OJ 小组中的班级。", "error")
@@ -607,6 +665,7 @@ def edit(post_id: str):
                     post_id=post_id,
                     error=None,
                     extra_tags=list(extra_tags),
+                    is_hidden=bool(request.form.get("is_hidden")),
                 )
             datastore.update_post(
                 post_id,
@@ -614,6 +673,7 @@ def edit(post_id: str):
                 content=content,
                 category_tag=category_value,
                 class_tag=class_value,
+                is_hidden=bool(request.form.get("is_hidden")),
             )
             flash("文章已更新", "success")
             title_display = title if len(title) <= 40 else title[:37] + "…"
@@ -632,6 +692,7 @@ def edit(post_id: str):
         post_id=post_id,
         error=None,
         extra_tags=list(extra_tags),
+        is_hidden=hidden_flag,
     )
 
 
@@ -675,6 +736,7 @@ def user_profile(username: str):
 
     user_map = _user_lookup(datastore)
     raw_posts = [post for post in datastore.list_posts() if post.get("author") == username]
+    raw_posts = [post for post in raw_posts if _can_view_post(post)]
     viewer_favorite_ids: Set[str] = set()
     if current_user.is_authenticated:
         viewer_favorite_ids = datastore.favorite_post_ids(
