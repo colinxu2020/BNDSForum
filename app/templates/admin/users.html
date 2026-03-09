@@ -14,6 +14,19 @@
 </section>
 
 <section class="card">
+    <h2>批量管理</h2>
+    <form method="post" action="{{ url_for('admin.batch_update_quota') }}" class="form-inline">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        <label for="batch_quota">批量设定用户配额 (GB)：</label>
+        <input type="number" name="quota_gb" id="batch_quota" value="5.0" min="0" max="1000" step="0.5" style="width: 100px;">
+        <button type="submit" class="button primary" onclick="return confirm('确定要将所有已通过筛选（或全部）用户的配额修改为该数值吗？')">应用到列表</button>
+        {# 隐藏域：传递当前筛选条件以确定批量操作范围 #}
+        <input type="hidden" name="username_filter" value="{{ filters.username }}">
+        <input type="hidden" name="real_name_filter" value="{{ filters.real_name }}">
+    </form>
+</section>
+
+<section class="card">
     <h2>筛选用户</h2>
     <form id="user-filter-form" class="form-grid" method="get">
         <div class="form-field">

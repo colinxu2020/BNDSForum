@@ -512,6 +512,45 @@ def update_quota():
     return redirect(url_for("admin.user_list"))
 
 
+@bp.route("/quota/batch-update", methods=["POST"])
+@login_required
+def batch_update_quota():
+    if not current_user.is_admin:
+        return redirect(url_for("blog.index"))
+    
+    datastore = get_datastore()
+    quota_gb = float(request.form.get("quota_gb", "5.0"))
+    
+    # 获取当前的筛选条件，以确定要批量修改的用户范围
+    username_filter = request.form.get("username_filter", "").strip().lower()
+    real_name_filter = request.form.get("real_name_filter", "").strip().lower()
+    
+    all_users = datastore.list_users()
+    target_usernames = []
+    
+    for user in all_users:
+        username = user.get("username", "")
+        real_name = user.get("real_name", "")
+        
+        # 仅针对符合当前列表筛选条件的用户进行批量修改
+        if username_filter and username_filter not in username.lower():
+            continue
+        if real_name_filter and real_name_filter not in (real_name or "").lower():
+            continue
+            
+        target_usernames.append(username)
+    
+    if not target_usernames:
+        flash("没有找到符合条件的待修改用户", "error")
+        return redirect(url_for("admin.user_list", username=username_filter, real_name=real_name_filter))
+
+    datastore.batch_set_user_quotas(target_usernames, quota_gb)
+    
+    flash(f"已成功批量修改 {len(target_usernames)} 名用户的配额为 {quota_gb:.1f} GB", "success")
+    # 保持筛选条件返回列表
+    return redirect(url_for("admin.user_list", username=username_filter, real_name=real_name_filter))
+
+
 # ─── User Label (管理员给用户打标签) ───
 
 _LABEL_COLORS = {"blue", "green", "red", "orange", "purple", "gray", "yellow", "pink"}

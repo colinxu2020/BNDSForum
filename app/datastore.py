@@ -2411,7 +2411,7 @@ class DataStore:
 
     # Upload / image hosting -------------------------------------------
 
-    DEFAULT_QUOTA_BYTES = 10 * 1024 * 1024 * 1024  # 10 GB
+    DEFAULT_QUOTA_BYTES = 5 * 1024 * 1024 * 1024  # 5 GB
 
     def get_user_quota(self, username: str) -> int:
         conn = self._conn()
@@ -2431,6 +2431,20 @@ class DataStore:
                    ON CONFLICT(username) DO UPDATE SET quota_bytes = excluded.quota_bytes""",
                 (username, max(0, quota_bytes)),
             )
+
+    def batch_set_user_quotas(self, usernames: list[str], quota_gb: float) -> None:
+        """Batch update quotas for multiple users."""
+        if not usernames:
+            return
+        quota_bytes = int(quota_gb * (1024 ** 3))
+        conn = self._conn()
+        with conn:
+            for username in usernames:
+                conn.execute(
+                    """INSERT INTO user_quotas (username, quota_bytes) VALUES (?, ?)
+                       ON CONFLICT(username) DO UPDATE SET quota_bytes = excluded.quota_bytes""",
+                    (username, max(0, quota_bytes)),
+                )
 
     def get_user_used_space(self, username: str) -> int:
         conn = self._conn()
