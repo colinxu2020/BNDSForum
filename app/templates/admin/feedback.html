@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}反馈管理 - 管理后台{% endblock %}
+{% block content %}
+<section class="card">
+    <h1 style="margin-top:0">用户反馈</h1>
+    <div style="display:flex;gap:.5rem;margin-bottom:1.5rem;flex-wrap:wrap">
+        <a class="button small {% if not status_filter %}primary{% else %}ghost{% endif %}" href="{{ url_for('admin.feedback_list') }}">全部</a>
+        <a class="button small {% if status_filter == 'pending' %}primary{% else %}ghost{% endif %}" href="{{ url_for('admin.feedback_list', status='pending') }}">待处理</a>
+        <a class="button small {% if status_filter == 'replied' %}primary{% else %}ghost{% endif %}" href="{{ url_for('admin.feedback_list', status='replied') }}">已回复</a>
+        <a class="button small {% if status_filter == 'closed' %}primary{% else %}ghost{% endif %}" href="{{ url_for('admin.feedback_list', status='closed') }}">已关闭</a>
+    </div>
+    {% if feedback_items %}
+        <div style="display:grid;gap:1.2rem">
+        {% for fb in feedback_items %}
+        <details class="card" style="padding:1rem 1.2rem;margin:0">
+            <summary style="cursor:pointer;font-weight:600;display:flex;justify-content:space-between;align-items:center">
+                <span>{{ fb.username }} · {{ fb.category }} · {{ fb.created_at[:10] }}</span>
+                <span style="font-size:.8rem;padding:.2rem .6rem;border-radius:999px;
+                    background:{{ 'rgba(250,204,21,.15)' if fb.status=='pending' else ('rgba(34,197,94,.15)' if fb.status=='replied' else 'rgba(148,163,184,.15)') }};
+                    color:{{ '#ca8a04' if fb.status=='pending' else ('#16a34a' if fb.status=='replied' else 'var(--text-muted)') }}">
+                    {{ '待处理' if fb.status=='pending' else ('已回复' if fb.status=='replied' else '已关闭') }}
+                </span>
+            </summary>
+            <div style="margin-top:.75rem;line-height:1.7">{{ fb.content }}</div>
+            {% if fb.admin_reply %}
+            <div style="margin-top:.75rem;padding:.75rem 1rem;border-radius:8px;background:rgba(79,70,229,.06);border-left:3px solid var(--primary)">
+                <div style="font-size:.82rem;font-weight:600;color:var(--primary);margin-bottom:.3rem">管理员回复</div>
+                <div>{{ fb.admin_reply }}</div>
+            </div>
+            {% endif %}
+            {% if fb.status != 'closed' %}
+            <div style="margin-top:.75rem;display:flex;flex-direction:column;gap:.5rem">
+                <form method="post" action="{{ url_for('admin.reply_feedback', feedback_id=fb.id) }}" style="display:flex;flex-direction:column;gap:.5rem">
+                    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                    <textarea name="reply" rows="3" placeholder="回复内容..." style="width:100%;padding:.6rem .8rem;border-radius:8px;border:1px solid var(--border-color);background:var(--surface-color);color:var(--text-color);font:inherit;resize:vertical"></textarea>
+                    <div>
+                        <button type="submit" class="button small primary">提交回复</button>
+                    </div>
+                </form>
+                <form method="post" action="{{ url_for('admin.close_feedback', feedback_id=fb.id) }}" onsubmit="return confirm('确定关闭这条反馈？')">
+                    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="button small ghost">关闭反馈</button>
+                </form>
+            </div>
+            {% endif %}
+        </details>
+        {% endfor %}
+        </div>
+    {% else %}
+        <div class="empty-state" style="text-align:center;padding:2rem">暂无反馈</div>
+    {% endif %}
+</section>
+{% endblock %}

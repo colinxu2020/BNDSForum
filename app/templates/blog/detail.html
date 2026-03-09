@@ -74,6 +74,18 @@
         <button type="submit" class="button danger">删除</button>
     </form>
 {% endif %}
+{% if current_user.is_authenticated and current_user.is_admin %}
+    <form class="post-actions" method="post" action="{{ url_for('blog.pin', post_id=post['id']) }}" style="margin-top:.5rem">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        {% if post.get('is_pinned') %}
+            <input type="hidden" name="action" value="unpin">
+            <button type="submit" class="button ghost">取消置顶</button>
+        {% else %}
+            <input type="hidden" name="action" value="pin">
+            <button type="submit" class="button">📌 置顶文章</button>
+        {% endif %}
+    </form>
+{% endif %}
 
 <section class="comments card">
     <header>

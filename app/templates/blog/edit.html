@@ -9,53 +9,91 @@
         .choice-grid {
             display: flex;
             flex-wrap: wrap;
-            gap: 10px;
+            gap: 8px;
         }
+
         .chip-option {
             position: relative;
             display: inline-flex;
             align-items: center;
             gap: 8px;
-            padding: 10px 12px;
-            border-radius: 12px;
-            background: #f1f5f9;
-            font-weight: 700;
+            padding: 8px 14px;
+            border-radius: 10px;
+            background: var(--chip-bg, rgba(148, 163, 184, 0.1));
+            color: var(--text-color);
+            font-weight: 600;
+            font-size: 0.88rem;
             cursor: pointer;
-            transition: all 0.2s ease;
-            border: 1px solid transparent;
+            transition: background 0.18s ease, transform 0.15s ease, border-color 0.18s ease;
+            border: 1px solid var(--border-color);
         }
+
         .chip-option:hover {
             transform: translateY(-1px);
-            box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);
+            background: rgba(79, 70, 229, 0.08);
+            border-color: rgba(79, 70, 229, 0.25);
         }
+
         .chip-option input {
             position: absolute;
             inset: 0;
             opacity: 0;
             cursor: pointer;
         }
+
         .chip-option input:checked + span {
-            color: #0ea5e9;
+            color: var(--primary);
         }
+
         .chip-option .pill-sheen {
             position: absolute;
             inset: 0;
-            border-radius: 12px;
-            border: 1px solid #0ea5e9;
+            border-radius: 10px;
+            border: 1.5px solid var(--primary);
             opacity: 0;
-            transition: opacity 0.2s ease;
+            transition: opacity 0.18s ease;
+            pointer-events: none;
         }
+
         .chip-option input:checked ~ .pill-sheen {
             opacity: 1;
         }
+
         .pill-badge {
-            background: rgba(14, 165, 233, 0.14);
-            color: #0369a1;
-            font-size: 12px;
-            padding: 3px 8px;
+            background: rgba(79, 70, 229, 0.1);
+            color: var(--primary);
+            font-size: 11px;
+            padding: 2px 7px;
             border-radius: 999px;
-            border: 1px solid rgba(3, 105, 161, 0.2);
-            line-height: 1;
+            border: 1px solid rgba(79, 70, 229, 0.2);
+            line-height: 1.4;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            .chip-option {
+                background: rgba(30, 41, 59, 0.75);
+                border-color: rgba(148, 163, 184, 0.18);
+                color: #cbd5e1;
+            }
+
+            .chip-option:hover {
+                background: rgba(51, 65, 85, 0.85);
+                border-color: rgba(129, 140, 248, 0.35);
+            }
+
+            .chip-option input:checked + span {
+                color: #a5b4fc;
+            }
+
+            .chip-option .pill-sheen {
+                border-color: #818cf8;
+            }
+
+            .pill-badge {
+                background: rgba(99, 102, 241, 0.18);
+                color: #a5b4fc;
+                border-color: rgba(129, 140, 248, 0.28);
+            }
         }
     </style>
 {% endblock %}
@@ -92,6 +130,9 @@
                     <button type="button" class="markdown-tool" data-md-surround="`" title="行内代码">Code</button>
                     <button type="button" class="markdown-tool" data-md-block="```" title="代码块">Code Block</button>
                     <button type="button" class="markdown-tool" data-md-prefix="- " title="无序列表">List</button>
+                    <span class="markdown-tool-separator" aria-hidden="true"></span>
+                    <button type="button" class="markdown-tool" data-md-action="fullscreen" title="全屏" aria-pressed="false">⛶</button>
+                    <button type="button" class="markdown-tool" data-md-action="sync-scroll" title="同步滚动（编辑器⇔预览）" aria-pressed="false">🔗</button>
                 </div>
                 <div class="markdown-panels">
                     <div class="markdown-panel markdown-panel-editor">
@@ -168,13 +209,45 @@
     <script>
         (function () {
             let allowUnload = false;
+            let isDirty = false;
+
+            // 记录初始值，用于比较是否有实际修改
+            const titleInput = document.querySelector('input[name="title"]');
+            const initialTitle = titleInput ? titleInput.value : '';
+
+            // CodeMirror 实例在 editor.js 初始化后才可用，延迟获取
+            let initialContent = null;
+
             window.addEventListener('beforeunload', function (e) {
                 if (allowUnload) return;
-                const confirmationMessage = '您确定要离开此页面吗？未保存的数据可能会丢失。';
+                // 若内容未变则放行
+                const cm = document.querySelector('[data-markdown-editor]')?._cm;
+                const currentContent = cm ? cm.getValue() : '';
+                const currentTitle = titleInput ? titleInput.value : '';
+                if (initialContent === null) {
+                    // editor.js 尚未就绪，保守提示
+                } else if (!isDirty && currentContent === initialContent && currentTitle === initialTitle) {
+                    return;
+                }
+                const msg = '您确定要离开此页面吗？未保存的数据可能会丢失。';
                 e.preventDefault();
-                e.returnValue = confirmationMessage;
-                return confirmationMessage;
+                e.returnValue = msg;
+                return msg;
             });
+
+            // 获取 CodeMirror 初始内容（editor.js 初始化后触发）
+            document.addEventListener('mdeditor:ready', function (e) {
+                const cm = e.detail && e.detail.cm;
+                if (cm) {
+                    initialContent = cm.getValue();
+                    cm.on('change', function () { isDirty = true; });
+                }
+            });
+
+            if (titleInput) {
+                titleInput.addEventListener('input', function () { isDirty = true; });
+            }
+
             const form = document.querySelector('section.card form.form-grid');
             if (form) {
                 form.addEventListener('submit', function () {

@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}用户反馈 - BNDS Blog{% endblock %}
+{% block extra_head %}
+{{ super() }}
+<style>
+.feedback-card { margin-bottom:1rem; }
+.feedback-form textarea { min-height:160px; width:100%; }
+.feedback-list { display:grid; gap:1rem; margin-top:1.5rem; }
+.fb-item { padding:1rem 1.2rem; border:1px solid var(--border-color); border-radius:var(--radius-md); background:var(--surface-color); }
+.fb-item-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:.5rem; }
+.fb-status { font-size:.8rem; font-weight:600; padding:.2rem .6rem; border-radius:999px; }
+.fb-status.pending { background:rgba(250,204,21,.15); color:#ca8a04; }
+.fb-status.replied { background:rgba(34,197,94,.15); color:#16a34a; }
+.fb-status.closed { background:rgba(148,163,184,.15); color:var(--text-subtle); }
+.fb-content { margin:.5rem 0; line-height:1.7; }
+.fb-reply { margin-top:.75rem; padding:.75rem 1rem; border-radius:var(--radius-sm); background:rgba(79,70,229,.06); border-left:3px solid var(--primary); }
+.fb-reply-label { font-size:.82rem; font-weight:600; color:var(--primary); margin-bottom:.3rem; }
+.fb-meta { font-size:.82rem; color:var(--text-muted); }
+@media (prefers-color-scheme:dark) {
+ .fb-item { background:rgba(16,22,38,.97); border-color:rgba(148,163,184,.12); }
+ .fb-reply { background:rgba(99,102,241,.08); }
+}
+</style>
+{% endblock %}
+{% block content %}
+<section class="card feedback-card">
+    <h1 style="margin-top:0">提交反馈</h1>
+    <p class="form-tip">你的意见对我们非常重要！请描述遇到的问题或建议。</p>
+    <form method="post" class="form-grid">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+        <div class="form-field">
+            <label for="category">反馈类型</label>
+            <select id="category" name="category">
+                {% for val, label in categories %}
+                <option value="{{ val }}">{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-field">
+            <label for="content">详细描述</label>
+            <textarea id="content" name="content" rows="6" placeholder="请尽可能详细地描述您的反馈..." required></textarea>
+        </div>
+        <div class="form-actions">
+            <button type="submit" class="button primary">提交反馈</button>
+        </div>
+    </form>
+</section>
+
+{% if my_feedback %}
+<section class="card">
+    <h2 style="margin-top:0">我的反馈记录</h2>
+    <div class="feedback-list">
+        {% for fb in my_feedback %}
+        <div class="fb-item">
+            <div class="fb-item-header">
+                <span class="fb-meta">{{ fb.created_at[:16].replace('T',' ') }} · {{ fb.category }}</span>
+                <span class="fb-status {{ fb.status }}">
+                    {% if fb.status == 'pending' %}待处理
+                    {% elif fb.status == 'replied' %}已回复
+                    {% else %}已关闭{% endif %}
+                </span>
+            </div>
+            <div class="fb-content">{{ fb.content }}</div>
+            {% if fb.admin_reply %}
+            <div class="fb-reply">
+                <div class="fb-reply-label">管理员回复</div>
+                <div>{{ fb.admin_reply }}</div>
+                {% if fb.replied_at %}
+                <div class="fb-meta" style="margin-top:.3rem">{{ fb.replied_at[:16].replace('T',' ') }}</div>
+                {% endif %}
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+{% endblock %}

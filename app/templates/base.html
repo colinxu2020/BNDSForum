@@ -3,6 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{% block title %}BNDS Blog{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <style>
@@ -16,6 +17,13 @@
             cursor: pointer;
             padding: 8px 0;
             display: inline-block;
+            color: var(--text-muted);
+            font-size: 14px;
+            text-decoration: none;
+            transition: color 0.2s ease;
+        }
+        .dropdown-trigger:hover {
+            color: var(--primary);
         }
         
         /* 鼠标悬停显示 */
@@ -27,7 +35,7 @@
         }
 
         .dropdown-menu {
-            display: none; /* 默认隐藏 */
+            display: none;
             position: absolute;
             top: 100%;
             left: 50%;
@@ -39,20 +47,6 @@
             padding: 8px 0;
             z-index: 1000;
             border: 1px solid #e2e8f0;
-        }
-        
-        /* 暗黑模式适配（如果系统支持） */
-        @media (prefers-color-scheme: dark) {
-            .dropdown-menu {
-                background-color: #1e293b;
-                border-color: #334155;
-            }
-            .dropdown-menu a {
-                color: #e2e8f0;
-            }
-            .dropdown-menu a:hover {
-                background-color: #334155;
-            }
         }
 
         .dropdown-menu a {
@@ -69,7 +63,7 @@
             background-color: #f1f5f9;
             color: #0ea5e9;
         }
-        
+
         /* 增加一个小箭头 */
         .dropdown-menu::before {
             content: "";
@@ -79,11 +73,40 @@
             margin-left: -6px;
             border-width: 0 6px 6px;
             border-style: solid;
-            border-color: transparent transparent #ffffff; 
+            border-color: transparent transparent #ffffff;
         }
+
+        /* 右对齐下拉菜单 */
+        .dropdown-menu.dropdown-right {
+            left: auto;
+            right: 0;
+            transform: translateX(0) translateY(10px);
+        }
+        .nav-item-dropdown:hover .dropdown-menu.dropdown-right {
+            transform: translateX(0) translateY(0);
+        }
+        .dropdown-menu.dropdown-right::before {
+            left: auto;
+            right: 16px;
+            margin-left: 0;
+        }
+
+        /* ===== 暗黑模式 — 必须放在通用规则之后才能覆盖 ===== */
         @media (prefers-color-scheme: dark) {
+            .dropdown-menu {
+                background-color: #1e2a3a;
+                border-color: #2d3f55;
+                box-shadow: 0 8px 32px rgba(0,0,0,0.55);
+            }
+            .dropdown-menu a {
+                color: #e2e8f0 !important;
+            }
+            .dropdown-menu a:hover {
+                background-color: #2d3f55;
+                color: #7dd3fc !important;
+            }
             .dropdown-menu::before {
-                border-color: transparent transparent #334155; /* 暗色模式箭头颜色 */
+                border-color: transparent transparent #1e2a3a;
             }
         }
     </style>
@@ -124,8 +147,17 @@
                             <span class="nav-indicator-dot" aria-label="有新消息" title="有新的私信"></span>
                         {% endif %}
                     </a>
-                    <a href="{{ url_for('blog.user_profile', username=current_user.username) }}">我的主页</a>
-                    <a href="{{ url_for('blog.favorites') }}">我的收藏</a>
+                    <!-- 个人中心下拉 -->
+                    <div class="nav-item-dropdown">
+                        <span class="dropdown-trigger">个人中心 &#9662;</span>
+                        <div class="dropdown-menu dropdown-right">
+                            <a href="{{ url_for('blog.user_profile', username=current_user.username) }}">我的主页</a>
+                            <a href="{{ url_for('blog.favorites') }}">我的收藏</a>
+                            <a href="{{ url_for('drive.index') }}">我的云盘</a>
+                            <a href="{{ url_for('uploads.index') }}">图床</a>
+                            <a href="{{ url_for('feedback.form') }}">用户反馈</a>
+                        </div>
+                    </div>
                     {% if current_user.is_admin %}
                         <a href="{{ url_for('admin.dashboard') }}">管理后台</a>
                     {% endif %}

@@ -48,8 +48,9 @@
             <tr>
                 <th>真实姓名</th>
                 <th>用户名</th>
-                <th>角色</th>
+                <th>角色 / 用户标签</th>
                 <th>状态</th>
+                <th>存储配额</th>
                 <th>操作</th>
             </tr>
             </thead>
@@ -81,6 +82,30 @@
                                     </select>
                                 </div>
                             </div>
+                            {# 用户标签展示与简单管理 #}
+                            <div class="table-user-labels" style="margin-top:.4rem;display:flex;flex-wrap:wrap;gap:.25rem;">
+                                {% for lbl in user.labels %}
+                                    <form method="post" action="{{ url_for('admin.remove_user_label', username=user['username']) }}" style="display:inline;">
+                                        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                                        <input type="hidden" name="label" value="{{ lbl.label }}">
+                                        <button type="submit" class="user-label user-label--{{ lbl.color }}" style="font-size:.65rem;padding:.05rem .35rem;cursor:pointer;border:none;" title="点击删除">
+                                            {{ lbl.label }} ✕
+                                        </button>
+                                    </form>
+                                {% endfor %}
+                                <button type="button" class="button small ghost" style="padding:.1rem .3rem;font-size:10px;height:auto;" 
+                                        onclick="this.nextElementSibling.style.display='flex';this.style.display='none'">+ 标签</button>
+                                <form method="post" action="{{ url_for('admin.add_user_label', username=user['username']) }}" 
+                                      style="display:none;gap:.2rem;align-items:center;">
+                                    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                                    <input type="text" name="label" placeholder="新标签" required style="width:60px;font-size:11px;padding:.1rem .2rem;">
+                                    <select name="color" style="font-size:10px;padding:0;">
+                                        <option value="blue">蓝</option><option value="green">绿</option><option value="red">红</option>
+                                        <option value="orange">橙</option><option value="purple">紫</option><option value="gray">灰</option>
+                                    </select>
+                                    <button type="submit" class="button primary small" style="padding:0 .2rem;height:18px;">ok</button>
+                                </form>
+                            </div>
                         </td>
                         <td>
                             {% if user['is_banned'] %}
@@ -88,6 +113,17 @@
                             {% else %}
                                 <span class="tag-badge">正常</span>
                             {% endif %}
+                        </td>
+                        <td>
+                            <form method="post" action="{{ url_for('admin.update_quota') }}" style="display:flex;align-items:center;gap:.4rem">
+                                <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                                <input type="hidden" name="username" value="{{ user['username'] }}">
+                                <input type="number" name="quota_gb" value="{{ user.get('quota_gb', 10) }}" min="0" max="1000" step="0.5"
+                                       style="width:5rem;padding:.25rem .4rem;border-radius:6px;border:1px solid var(--border-color);background:var(--surface-color);color:var(--text-color);font:inherit;text-align:right" title="配额（GB）">
+                                <span style="font-size:.82rem;color:var(--text-muted)">GB</span>
+                                <button type="submit" class="button small ghost" title="更新配额">✓</button>
+                            </form>
+                            <div style="font-size:.75rem;color:var(--text-subtle);margin-top:.2rem">已用 {{ user.get('used_mb', 0) }} MB</div>
                         </td>
                         <td>
                             <div class="row-actions">
@@ -116,7 +152,7 @@
                 {% endfor %}
             {% else %}
                 <tr>
-                    <td colspan="5">暂无符合条件的用户，请调整筛选条件。</td>
+                    <td colspan="6">暂无符合条件的用户，请调整筛选条件。</td>
                 </tr>
             {% endif %}
             </tbody>

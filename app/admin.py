@@ -228,6 +228,15 @@ def user_list():
         key=lambda item: ((item.get("real_name") or item["username"]).lower(), item["username"].lower())
     )
 
+    # 附加各用户配额信息（GB）和标签
+    label_map = datastore.list_all_user_labels()
+    for user in filtered_users:
+        quota_bytes = datastore.get_user_quota(user["username"])
+        used_bytes = datastore.get_user_used_space(user["username"])
+        user["quota_gb"] = round(quota_bytes / (1024 ** 3), 1)
+        user["used_mb"] = round(used_bytes / (1024 ** 2), 1)
+        user["labels"] = label_map.get(user["username"], [])
+
     return render_template(
         "admin/users.html",
         users=filtered_users,
@@ -444,3 +453,106 @@ def bulk_update_user_tags():
         return redirect(url_for("blog.index"))
     flash("固定标签功能已移除", "info")
     return redirect(url_for("admin.user_list"))
+
+
+@bp.route("/feedback")
+@login_required
+def feedback_list():
+    if not current_user.is_admin:
+        return redirect(url_for("blog.index"))
+    datastore = get_datastore()
+    status_filter = request.args.get("status", "").strip()
+    all_feedback = datastore.list_feedback(status=status_filter or None)
+    return render_template("admin/feedback.html", feedback_items=all_feedback, status_filter=status_filter)
+
+
+@bp.route("/feedback/<feedback_id>/reply", methods=["POST"])
+@login_required
+def reply_feedback(feedback_id: str):
+    if not current_user.is_admin:
+        return redirect(url_for("blog.index"))
+    reply = request.form.get("reply", "").strip()
+    if not reply:
+        flash("回复内容不能为空", "error")
+    else:
+        datastore = get_datastore()
+        datastore.reply_feedback(feedback_id, reply)
+        flash("已回复反馈", "success")
+    return redirect(url_for("admin.feedback_list"))
+
+
+@bp.route("/feedback/<feedback_id>/close", methods=["POST"])
+@login_required
+def close_feedback(feedback_id: str):
+    if not current_user.is_admin:
+        return redirect(url_for("blog.index"))
+    datastore = get_datastore()
+    datastore.close_feedback(feedback_id)
+    flash("反馈已关闭", "success")
+    return redirect(url_for("admin.feedback_list"))
+
+
+@bp.route("/quota/update", methods=["POST"])
+@login_required
+def update_quota():
+    if not current_user.is_admin:
+        return redirect(url_for("blog.index"))
+    username = request.form.get("username", "").strip()
+    try:
+        quota_gb = float(request.form.get("quota_gb", "10"))
+    except ValueError:
+        flash("配额格式无效", "error")
+        return redirect(url_for("admin.user_list"))
+    if not username:
+        flash("未指定用户", "error")
+        return redirect(url_for("admin.user_list"))
+    datastore = get_datastore()
+    datastore.set_user_quota(username, int(quota_gb * 1024 * 1024 * 1024))
+    flash(f"已将 {username} 的存储配额设为 {quota_gb:.1f} GB", "success")
+    return redirect(url_for("admin.user_list"))
+
+
+# ─── User Label (管理员给用户打标签) ───
+
+_LABEL_COLORS = {"blue", "green", "red", "orange", "purple", "gray", "yellow", "pink"}
+
+
+@bp.route("/user/<username>/label", methods=["POST"])
+@login_required
+def add_user_label(username: str):
+    if not current_user.is_admin:
+        abort(403)
+    datastore = get_datastore()
+    user = datastore.get_user(username)
+    if not user:
+        abort(404)
+    label = request.form.get("label", "").strip()
+    color = request.form.get("color", "blue").strip()
+    if not label:
+        flash("标签名不能为空", "error")
+        return redirect(url_for("blog.user_profile", username=username))
+    if len(label) > 50:
+        flash("标签名过长（最多 50 字符）", "error")
+        return redirect(url_for("blog.user_profile", username=username))
+    if color not in _LABEL_COLORS:
+        color = "blue"
+    try:
+        datastore.add_user_label(username, label, color, current_user.username)
+        flash(f"已为 {username} 添加标签「{label}」", "success")
+    except ValueError as exc:
+        flash(str(exc), "error")
+    return redirect(url_for("blog.user_profile", username=username))
+
+
+@bp.route("/user/<username>/label/delete", methods=["POST"])
+@login_required
+def remove_user_label(username: str):
+    if not current_user.is_admin:
+        abort(403)
+    datastore = get_datastore()
+    label = request.form.get("label", "").strip()
+    if not label:
+        abort(400)
+    datastore.remove_user_label(username, label)
+    flash(f"已移除标签「{label}」", "success")
+    return redirect(url_for("blog.user_profile", username=username))

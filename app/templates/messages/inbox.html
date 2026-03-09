@@ -40,7 +40,13 @@
                                 <div class="conversation-header">
                                     <span class="conversation-name">{{ convo['display'] }}</span>
                                     {% if convo['unread_count'] %}
-                                        <span class="conversation-unread">{{ convo['unread_count'] }}</span>
+                                        <span class="conversation-unread {% if convo['preference'] == 'silent' %}is-muted{% endif %}">
+                                            {% if convo['preference'] == 'silent' %}
+                                                <span class="sr-only">{{ convo['unread_count'] }} 条未读（免打扰）</span>
+                                            {% else %}
+                                                {{ convo['unread_count'] }}
+                                            {% endif %}
+                                        </span>
                                     {% endif %}
                                 </div>
                                 <div class="conversation-preview">
@@ -60,7 +66,7 @@
                     <div>
                         <h2>{{ selected_user.display }}</h2>
                         {% if selected_preference == 'silent' %}
-                            <p class="thread-note">当前对话设置为静默模式，新消息不会显示提醒。</p>
+                            <p class="thread-note">🔕 已开启免打扰，未读消息只显示红点而不显示数字。</p>
                         {% elif selected_preference == 'block' %}
                             <p class="thread-note danger">你已拉黑该用户，对方发送的消息会被拦截。</p>
                         {% endif %}
@@ -89,7 +95,7 @@
                             <article class="message-item {% if message.is_outgoing %}from-self{% else %}from-them{% endif %}">
                                 <div class="message-meta">{{ message.created_at }}</div>
                                 <div class="message-body">
-                                    {{ message.content | urlize | replace('\n', '<br>') | safe }}
+                                    {{ message.content | e | urlize | replace('\n', '<br>') | safe }}
                                 </div>
                             </article>
                         {% endfor %}

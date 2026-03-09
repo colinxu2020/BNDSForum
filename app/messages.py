@@ -17,8 +17,8 @@ from .datastore import (
 bp = Blueprint("messages", __name__, url_prefix="/messages")
 
 _PREFERENCE_LABELS: Dict[MessagePreference, str] = {
-    "notify": "收到消息时提醒",
-    "silent": "收到消息时不提醒",
+    "notify": "正常提醒",
+    "silent": "免打扰（只显示红点，不显示数字）",
     "block": "拉黑对方",
 }
 _PREFERENCE_ORDER: List[MessagePreference] = ["notify", "silent", "block"]
@@ -198,7 +198,7 @@ def update_preference(username: str):
         if preference_value == MESSAGE_PREFERENCE_DEFAULT:
             flash("已恢复默认提醒方式", "success")
         elif preference_value == "silent":
-            flash("已设置为收到消息时不提醒", "success")
+            flash("已开启免打扰，只会显示红点，不显示未读数", "success")
         elif preference_value == "block":
             flash("已拉黑该用户，后续消息将被拦截", "success")
         else:

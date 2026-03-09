@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}图床 - BNDS Blog{% endblock %}
+{% block extra_head %}
+{{ super() }}
+<style>
+.uploads-header { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem; margin-bottom:1.5rem; }
+.quota-bar { width:100%; height:8px; border-radius:999px; background:rgba(148,163,184,.2); overflow:hidden; margin-top:.5rem; }
+.quota-fill { height:100%; border-radius:999px; background:linear-gradient(90deg,var(--primary),var(--accent)); transition:width .3s; }
+.quota-text { font-size:.85rem; color:var(--text-muted); margin-top:.3rem; }
+.upload-zone { border:2px dashed var(--border-color); border-radius:var(--radius-md); padding:2.5rem 1.5rem; text-align:center; cursor:pointer; transition:border-color .2s,background .2s; margin-bottom:1.5rem; }
+.upload-zone:hover,.upload-zone.drag-over { border-color:var(--primary); background:rgba(79,70,229,.06); }
+.upload-zone input { display:none; }
+.upload-zone p { margin:0; color:var(--text-muted); }
+.upload-zone .upload-icon { font-size:2rem; margin-bottom:.5rem; }
+.gallery { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:1rem; }
+.gallery-item { position:relative; border-radius:var(--radius-md); border:1px solid var(--border-color); overflow:hidden; background:var(--surface-color); transition:transform .15s,box-shadow .15s; }
+.gallery-item:hover { transform:translateY(-2px); box-shadow:0 8px 24px rgba(15,23,42,.12); }
+.gallery-item img { width:100%; height:150px; object-fit:cover; display:block; background:rgba(148,163,184,.1); }
+.gallery-item-info { padding:.6rem .8rem; }
+.gallery-item-name { font-size:.82rem; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.gallery-item-meta { font-size:.75rem; color:var(--text-muted); margin-top:.2rem; display:flex; justify-content:space-between; }
+.gallery-item-actions { display:flex; gap:.3rem; padding:.4rem .8rem .6rem; }
+.gallery-item-actions button { font-size:.75rem; padding:.25rem .5rem; }
+.upload-progress { display:none; margin-bottom:1rem; }
+.upload-progress.active { display:block; }
+.progress-bar-bg { width:100%; height:6px; border-radius:999px; background:rgba(148,163,184,.2); overflow:hidden; }
+.progress-bar-fill { height:100%; border-radius:999px; background:var(--primary); width:0; transition:width .2s; }
+@media (prefers-color-scheme:dark) {
+ .gallery-item { border-color:rgba(148,163,184,.15); background:rgba(16,22,38,.97); }
+ .gallery-item:hover { box-shadow:0 8px 24px rgba(0,0,0,.4); }
+ .upload-zone { border-color:rgba(148,163,184,.2); }
+ .upload-zone:hover,.upload-zone.drag-over { border-color:rgba(129,140,248,.5); background:rgba(99,102,241,.08); }
+}
+</style>
+{% endblock %}
+{% block content %}
+<section class="card">
+    <div class="uploads-header">
+        <div>
+            <h1 style="margin:0">图床</h1>
+            <p class="form-tip">上传图片后复制 Markdown 链接，可在文章中直接使用。</p>
+        </div>
+        <div style="min-width:200px">
+            <div class="quota-bar"><div class="quota-fill" style="width:{{ (used / quota * 100) if quota > 0 else 0 }}%"></div></div>
+            <p class="quota-text">已用 {{ "%.2f"|format(used / 1024 / 1024 / 1024) }} GB / {{ "%.1f"|format(quota / 1024 / 1024 / 1024) }} GB</p>
+        </div>
+    </div>
+
+    <div class="upload-zone" id="uploadZone">
+        <input type="file" id="fileInput" accept="image/*" multiple>
+        <div class="upload-icon">📷</div>
+        <p><strong>点击或拖拽图片到此处上传</strong></p>
+        <p style="font-size:.82rem;margin-top:.3rem">支持 PNG / JPG / GIF / WebP / SVG，单文件最大 20 MB</p>
+    </div>
+
+    <div class="upload-progress" id="uploadProgress">
+        <div class="progress-bar-bg"><div class="progress-bar-fill" id="progressFill"></div></div>
+        <p class="quota-text" id="progressText">上传中...</p>
+    </div>
+
+    {% if uploads %}
+    <h2>已上传图片（{{ uploads|length }}）</h2>
+    <div class="gallery">
+        {% for item in uploads %}
+        <div class="gallery-item" data-id="{{ item.id }}">
+            <img src="{{ item.storage_url }}" alt="{{ item.original_name }}" loading="lazy" onerror="this.style.display='none'">
+            <div class="gallery-item-info">
+                <div class="gallery-item-name" title="{{ item.original_name }}">{{ item.original_name }}</div>
+                <div class="gallery-item-meta">
+                    <span>{{ "%.1f"|format(item.file_size / 1024) }} KB</span>
+                    <span>{{ item.created_at[:10] }}</span>
+                </div>
+            </div>
+            <div class="gallery-item-actions">
+                <button class="button small primary" onclick="copyLink('{{ item.storage_url }}','{{ item.original_name }}')">复制链接</button>
+                <button class="button small danger ghost" onclick="deleteUpload('{{ item.id }}',this)">删除</button>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state" style="text-align:center;padding:2rem">
+        <p>还没有上传过图片</p>
+    </div>
+    {% endif %}
+</section>
+
+<script>
+(function(){
+    var zone = document.getElementById('uploadZone');
+    var input = document.getElementById('fileInput');
+    var csrf = '{{ csrf_token() }}';
+
+    zone.addEventListener('click', function(){ input.click(); });
+    zone.addEventListener('dragover', function(e){ e.preventDefault(); zone.classList.add('drag-over'); });
+    zone.addEventListener('dragleave', function(){ zone.classList.remove('drag-over'); });
+    zone.addEventListener('drop', function(e){
+        e.preventDefault(); zone.classList.remove('drag-over');
+        if(e.dataTransfer.files.length) uploadFiles(e.dataTransfer.files);
+    });
+    input.addEventListener('change', function(){ if(input.files.length) uploadFiles(input.files); });
+
+    function uploadFiles(files){
+        var progressEl = document.getElementById('uploadProgress');
+        var fillEl = document.getElementById('progressFill');
+        var textEl = document.getElementById('progressText');
+        var total = files.length, done = 0;
+        progressEl.classList.add('active');
+
+        Array.from(files).forEach(function(file){
+            var fd = new FormData();
+            fd.append('file', file);
+            fd.append('_csrf_token', csrf);
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', '{{ url_for("uploads.api_upload") }}');
+            xhr.setRequestHeader('X-CSRFToken', csrf);
+            xhr.upload.onprogress = function(e){
+                if(e.lengthComputable){
+                    fillEl.style.width = Math.round(((done/total) + (e.loaded/e.total/total))*100) + '%';
+                }
+            };
+            xhr.onload = function(){
+                done++;
+                fillEl.style.width = Math.round(done/total*100)+'%';
+                textEl.textContent = done+'/'+total+' 完成';
+                try{
+                    var res = JSON.parse(xhr.responseText);
+                    if(!res.success) alert(res.message || '上传失败');
+                }catch(e){}
+                if(done===total){ setTimeout(function(){ location.reload(); }, 500); }
+            };
+            xhr.onerror = function(){ done++; alert('上传出错'); };
+            xhr.send(fd);
+        });
+    }
+
+    window.copyLink = function(url, name){
+        var md = '!['+name+']('+url+')';
+        navigator.clipboard.writeText(md).then(function(){ alert('已复制 Markdown 链接'); });
+    };
+
+    window.deleteUpload = function(id, btn){
+        if(!confirm('确定要删除这张图片吗？')) return;
+        var fd = new FormData();
+        fd.append('_csrf_token', csrf);
+        fetch('{{ url_for("uploads.api_delete", upload_id="__ID__") }}'.replace('__ID__',id), {
+            method:'POST', headers:{'X-CSRFToken': csrf}, body: fd
+        }).then(function(r){ return r.json(); }).then(function(d){
+            if(d.success){ btn.closest('.gallery-item').remove(); }
+            else alert(d.message);
+        });
+    };
+})();
+</script>
+{% endblock %}

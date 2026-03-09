@@ -17,6 +17,49 @@
         <p class="form-tip">
             用户名：{{ profile['username'] }} · 角色：{{ '管理员' if profile.get('role') == 'admin' else '普通用户' }}
         </p>
+        {# ── 用户标签 ── #}
+        {% if user_labels %}
+        <div class="user-label-list" style="margin-top:.5rem;display:flex;flex-wrap:wrap;gap:.4rem;">
+            {% for lbl in user_labels %}
+            <span class="user-label user-label--{{ lbl.color }}" title="由 {{ lbl.created_by }} 添加">{{ lbl.label }}</span>
+            {% endfor %}
+        </div>
+        {% endif %}
+        {# ── 管理员：添加/删除标签 ── #}
+        {% if current_user.is_authenticated and current_user.is_admin %}
+        <details style="margin-top:.75rem;">
+            <summary style="cursor:pointer;font-size:.85rem;color:var(--color-muted,#64748b);">管理用户标签 ▸</summary>
+            <div style="margin-top:.5rem;display:flex;flex-wrap:wrap;gap:.5rem;align-items:flex-end;">
+                <form method="post" action="{{ url_for('admin.add_user_label', username=profile['username']) }}" style="display:flex;gap:.35rem;align-items:center;flex-wrap:wrap;">
+                    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                    <input type="text" name="label" placeholder="标签名" maxlength="50" required style="width:120px;">
+                    <select name="color" style="padding:.3rem .5rem;border-radius:4px;border:1px solid #cbd5e1;">
+                        <option value="blue">蓝</option>
+                        <option value="green">绿</option>
+                        <option value="red">红</option>
+                        <option value="orange">橙</option>
+                        <option value="purple">紫</option>
+                        <option value="gray">灰</option>
+                        <option value="yellow">黄</option>
+                        <option value="pink">粉</option>
+                    </select>
+                    <button type="submit" class="button primary small">+ 添加</button>
+                </form>
+            </div>
+            {% if user_labels %}
+            <div style="margin-top:.5rem;display:flex;flex-wrap:wrap;gap:.4rem;">
+                {% for lbl in user_labels %}
+                <form method="post" action="{{ url_for('admin.remove_user_label', username=profile['username']) }}" style="display:inline;">
+                    <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="label" value="{{ lbl.label }}">
+                    <button type="submit" class="user-label user-label--{{ lbl.color }}" style="cursor:pointer;border:none;"
+                            title="点击删除该标签">{{ lbl.label }} ✕</button>
+                </form>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </details>
+        {% endif %}
     </header>
 
     <div class="profile-meta">

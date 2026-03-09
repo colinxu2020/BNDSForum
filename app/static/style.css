@@ -26,17 +26,17 @@
 
 @media (prefers-color-scheme: dark) {
     :root {
-        --bg-gradient: radial-gradient(circle at top, rgba(79, 70, 229, 0.25), transparent 55%),
-                       linear-gradient(180deg, #0f172a 0%, #111928 100%);
-        --bg-color: #0f172a;
-        --surface-color: rgba(15, 23, 42, 0.9);
-        --surface-muted: rgba(30, 41, 59, 0.75);
-        --border-color: rgba(148, 163, 184, 0.18);
-        --border-strong: rgba(165, 180, 252, 0.35);
-        --text-color: #e2e8f0;
-        --text-muted: #cbd5f5;
-        --text-subtle: #94a3b8;
-        --shadow-soft: 0 25px 60px rgba(15, 23, 42, 0.65);
+        --bg-gradient: radial-gradient(ellipse at top left, rgba(99, 102, 241, 0.14) 0%, transparent 50%),
+                       linear-gradient(180deg, #0a0e17 0%, #0e1220 100%);
+        --bg-color: #0a0e17;
+        --surface-color: rgba(16, 22, 38, 0.96);
+        --surface-muted: rgba(22, 30, 50, 0.75);
+        --border-color: rgba(148, 163, 184, 0.14);
+        --border-strong: rgba(129, 140, 248, 0.32);
+        --text-color: #dde3f0;
+        --text-muted: #8892aa;
+        --text-subtle: #55607a;
+        --shadow-soft: 0 20px 50px rgba(0, 0, 0, 0.55);
     }
 }
 
@@ -74,7 +74,8 @@ body {
 
 @media (prefers-color-scheme: dark) {
     .site-header {
-        background: rgba(15, 23, 42, 0.85);
+        background: rgba(10, 14, 23, 0.88);
+        border-bottom-color: rgba(148, 163, 184, 0.1);
     }
 }
 
@@ -167,7 +168,8 @@ main {
 
 @media (prefers-color-scheme: dark) {
     .site-footer {
-        background: rgba(15, 23, 42, 0.85);
+        background: rgba(10, 14, 23, 0.9);
+        border-top-color: rgba(148, 163, 184, 0.1);
     }
 }
 
@@ -214,7 +216,9 @@ main {
 
 @media (prefers-color-scheme: dark) {
     .card {
-        border: 1px solid rgba(148, 163, 184, 0.16);
+        background: rgba(16, 22, 38, 0.97);
+        border: 1px solid rgba(148, 163, 184, 0.12);
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
     }
 }
 
@@ -788,6 +792,47 @@ main {
     border: 1px solid rgba(148, 163, 184, 0.35);
     background: rgba(255, 255, 255, 0.85);
     font: inherit;
+    color: var(--text-color);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.form-field input[type="text"]:focus,
+.form-field input[type="password"]:focus,
+.form-field input[type="email"]:focus,
+.form-field textarea:focus,
+.form-field select:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+}
+
+@media (prefers-color-scheme: dark) {
+    .form-field input[type="text"],
+    .form-field input[type="password"],
+    .form-field input[type="email"],
+    .form-field textarea,
+    .form-field select {
+        background: rgba(13, 18, 30, 0.92);
+        border-color: rgba(148, 163, 184, 0.22);
+        color: #e2e8f0;
+    }
+
+    .form-field input[type="text"]:focus,
+    .form-field input[type="password"]:focus,
+    .form-field input[type="email"]:focus,
+    .form-field textarea:focus,
+    .form-field select:focus {
+        border-color: #818cf8;
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.18);
+        background: rgba(20, 27, 44, 0.96);
+    }
+
+    .form-field input[type="text"]::placeholder,
+    .form-field input[type="password"]::placeholder,
+    .form-field input[type="email"]::placeholder,
+    .form-field textarea::placeholder {
+        color: rgba(148, 163, 184, 0.55);
+    }
 }
 
 .input-search {
@@ -797,6 +842,19 @@ main {
     border: 1px solid rgba(148, 163, 184, 0.35);
     background: rgba(255, 255, 255, 0.85);
     font: inherit;
+    color: var(--text-color);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+@media (prefers-color-scheme: dark) {
+    .input-search {
+        background: rgba(13, 18, 30, 0.92);
+        border-color: rgba(148, 163, 184, 0.22);
+        color: #dde3f0;
+    }
+    .input-search::placeholder {
+        color: rgba(148, 163, 184, 0.5);
+    }
 }
 
 .form-field textarea {
@@ -866,7 +924,39 @@ main {
 .markdown-panels {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    min-height: 320px;
+    height: 520px;
+    max-height: 72vh;
+    overflow: hidden;
+}
+
+/* 全屏模式 */
+.markdown-editor.is-fullscreen {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    border-radius: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    max-height: 100vh;
+}
+
+.markdown-editor.is-fullscreen .markdown-toolbar {
+    flex-shrink: 0;
+}
+
+.markdown-editor.is-fullscreen .markdown-panels {
+    flex: 1;
+    height: auto;
+    max-height: none;
+}
+
+.markdown-tool-separator {
+    width: 1px;
+    height: 20px;
+    background: var(--border-color);
+    margin: 0 4px;
+    flex-shrink: 0;
 }
 
 .markdown-editor.compact .markdown-panels {
@@ -876,6 +966,7 @@ main {
 .markdown-panel {
     position: relative;
     min-height: 100%;
+    overflow: hidden;
 }
 
 .markdown-panel-editor {
@@ -1352,6 +1443,16 @@ main {
     border-radius: var(--radius-sm);
     border: 1px solid rgba(148, 163, 184, 0.35);
     background: rgba(255, 255, 255, 0.85);
+    color: var(--text-color);
+    font: inherit;
+}
+
+@media (prefers-color-scheme: dark) {
+    .form-inline input[type="text"] {
+        background: rgba(13, 18, 30, 0.92);
+        border-color: rgba(148, 163, 184, 0.22);
+        color: #dde3f0;
+    }
 }
 
 .tag-manage-list {
@@ -1812,6 +1913,9 @@ th {
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
     padding: 0.5rem 0.75rem;
+    background: var(--surface-color);
+    color: var(--text-color);
+    font: inherit;
 }
 
 .messages-search-results ul,
@@ -1865,6 +1969,21 @@ th {
     padding: 0.1rem 0.45rem;
     font-size: 0.75rem;
     font-weight: 600;
+    min-width: 1.2rem;
+    text-align: center;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* 免打扰：只显示红点，不显示数字 */
+.conversation-unread.is-muted {
+    width: 0.6rem;
+    height: 0.6rem;
+    min-width: unset;
+    padding: 0;
+    border-radius: 50%;
+    background: var(--danger);
 }
 
 .conversation-preview {
@@ -1974,8 +2093,17 @@ th {
     border-radius: var(--radius-sm);
     padding: 0.75rem;
     font-size: 1rem;
+    font: inherit;
     resize: vertical;
     min-height: 120px;
+    background: var(--surface-color);
+    color: var(--text-color);
+    transition: border-color 0.2s ease;
+}
+
+.messages-compose textarea:focus {
+    outline: none;
+    border-color: var(--primary);
 }
 
 .messages-empty {
@@ -2056,4 +2184,201 @@ th {
         flex-direction: column;
         align-items: stretch;
     }
+}
+
+/* ===========================
+   修复：触控板双指滑出视口白边
+   =========================== */
+html {
+    /* 确保过度滚动区域与页面背景色一致，避免出现白色空白 */
+    background: #0a0e17;
+    overscroll-behavior: none;
+}
+
+@media (prefers-color-scheme: light) {
+    html {
+        background: #f5f7fb;
+    }
+}
+.badge-pinned {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 3px 8px;
+    border-radius: 7px;
+    font-size: 11px;
+    font-weight: 700;
+    background: rgba(245, 158, 11, 0.12);
+    color: #d97706;
+    border: 1px solid rgba(245, 158, 11, 0.22);
+    vertical-align: middle;
+    margin-left: 0.4em;
+}
+
+@media (prefers-color-scheme: dark) {
+    .badge-pinned {
+        background: rgba(245, 158, 11, 0.15);
+        color: #fbbf24;
+        border-color: rgba(245, 158, 11, 0.25);
+    }
+}
+
+/* ===========================
+   配额进度条
+   =========================== */
+.quota-bar {
+    height: 6px;
+    border-radius: 999px;
+    background: var(--border-color);
+    overflow: hidden;
+    margin: .4rem 0;
+}
+
+.quota-bar-fill {
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--primary), #818cf8);
+    transition: width .4s ease;
+}
+
+.quota-bar-fill.warning {
+    background: linear-gradient(90deg, #f59e0b, #fbbf24);
+}
+
+.quota-bar-fill.danger {
+    background: linear-gradient(90deg, var(--danger), #f87171);
+}
+
+/* ===========================
+   图床 / 云盘上传区
+   =========================== */
+.upload-dropzone {
+    border: 2px dashed var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 2.5rem;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .2s, background .2s;
+    color: var(--text-muted);
+}
+
+.upload-dropzone:hover,
+.upload-dropzone.drag-over {
+    border-color: var(--primary);
+    background: rgba(79, 70, 229, 0.04);
+    color: var(--primary);
+}
+
+/* ===========================
+   右键上下文菜单（云盘）
+   =========================== */
+.ctx-menu {
+    position: fixed;
+    z-index: 9999;
+    min-width: 160px;
+    background: var(--surface-color);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-soft);
+    padding: 4px 0;
+    font-size: .9rem;
+}
+
+.ctx-menu-item {
+    padding: 9px 16px;
+    cursor: pointer;
+    color: var(--text-color);
+    transition: background .15s;
+    white-space: nowrap;
+    user-select: none;
+}
+
+.ctx-menu-item:hover {
+    background: rgba(79, 70, 229, 0.08);
+    color: var(--primary);
+}
+
+.ctx-menu-item.danger {
+    color: var(--danger);
+}
+
+.ctx-menu-item.danger:hover {
+    background: rgba(239, 68, 68, 0.08);
+}
+
+.ctx-menu-sep {
+    height: 1px;
+    background: var(--border-color);
+    margin: 4px 0;
+}
+
+/* ===========================
+   文件列表行（云盘）
+   =========================== */
+.drive-file-row {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    padding: .65rem .9rem;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background .15s;
+    user-select: none;
+}
+
+.drive-file-row:hover {
+    background: rgba(79, 70, 229, 0.06);
+}
+
+.drive-file-row .file-icon {
+    font-size: 1.3rem;
+    flex-shrink: 0;
+}
+
+.drive-file-row .file-name {
+    flex: 1;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.drive-file-row .file-size {
+    font-size: .82rem;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+/* ── 用户标签 (User Labels) ── */
+.user-label {
+    display: inline-flex;
+    align-items: center;
+    gap: .2rem;
+    padding: .18rem .6rem;
+    border-radius: 99px;
+    font-size: .78rem;
+    font-weight: 600;
+    line-height: 1.4;
+    letter-spacing: .02em;
+    white-space: nowrap;
+    text-decoration: none;
+}
+.user-label--blue   { background: #dbeafe; color: #1d4ed8; }
+.user-label--green  { background: #d1fae5; color: #065f46; }
+.user-label--red    { background: #fee2e2; color: #b91c1c; }
+.user-label--orange { background: #ffedd5; color: #c2410c; }
+.user-label--purple { background: #ede9fe; color: #6d28d9; }
+.user-label--gray   { background: #f1f5f9; color: #475569; }
+.user-label--yellow { background: #fef9c3; color: #a16207; }
+.user-label--pink   { background: #fce7f3; color: #be185d; }
+
+@media (prefers-color-scheme: dark) {
+    .user-label--blue   { background: #1e3a5f; color: #93c5fd; }
+    .user-label--green  { background: #14532d; color: #6ee7b7; }
+    .user-label--red    { background: #7f1d1d; color: #fca5a5; }
+    .user-label--orange { background: #7c2d12; color: #fdba74; }
+    .user-label--purple { background: #4c1d95; color: #c4b5fd; }
+    .user-label--gray   { background: #1e293b; color: #94a3b8; }
+    .user-label--yellow { background: #713f12; color: #fde68a; }
+    .user-label--pink   { background: #831843; color: #f9a8d4; }
 }

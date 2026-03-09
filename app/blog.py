@@ -252,6 +252,7 @@ def _decorate_post(
     post: dict,
     user_map: dict[str, dict[str, object]],
     favorite_post_ids: Optional[Set[str]] = None,
+    label_map: Optional[dict[str, list]] = None,
 ) -> dict:
     record = user_map.get(post.get("author"), {})
     decorated = {**post}
@@ -259,10 +260,18 @@ def _decorate_post(
     decorated["author_real_name"] = record.get("real_name", "") if record else ""
     decorated["author_display"] = decorated["author_real_name"] or decorated["author_username"]
     decorated["author_constant_tags"] = []
+    # 注入用户标签 (用于首页/详情页显示)
+    if label_map is not None:
+        decorated["author_labels"] = label_map.get(decorated["author_username"], [])
+    else:
+        # 如果没有传入 map，则装饰器负责查库（慎用，循环内查库性能差，但在单篇装饰时可用）
+        decorated["author_labels"] = []
+
     decorated["category_tag"] = post.get("category_tag") or DEFAULT_CATEGORY_TAG
     decorated["class_tag"] = post.get("class_tag") or DEFAULT_CLASS_TAG
     decorated["favorite_count"] = post.get("favorite_count", 0)
     decorated["is_hidden"] = bool(post.get("is_hidden", False))
+    decorated["is_pinned"] = bool(post.get("is_pinned", False))
     if favorite_post_ids is not None:
         decorated["is_favorited"] = post.get("id") in favorite_post_ids
     else:
@@ -316,6 +325,7 @@ def index():
             seen_classes.add(lowered)
 
     user_map = _user_lookup(datastore)
+    label_map = datastore.list_all_user_labels()
     raw_posts = datastore.list_posts_filtered(
         category_tag=selected_category or None,
         class_tags=selected_class_tags or None,
@@ -352,7 +362,7 @@ def index():
             current_user.username,
             [post["id"] for post in page_posts],
         )
-    posts = [_decorate_post(post, user_map, favorite_post_ids) for post in page_posts]
+    posts = [_decorate_post(post, user_map, favorite_post_ids, label_map=label_map) for post in page_posts]
 
     query_args = request.args.to_dict(flat=False)
 
@@ -714,6 +724,23 @@ def delete(post_id: str):
     return redirect(url_for("blog.index"))
 
 
+@bp.route("/post/<post_id>/pin", methods=["POST"])
+@login_required
+def pin(post_id: str):
+    if not current_user.is_admin:
+        flash("只有管理员可以置顶文章", "error")
+        return redirect(url_for("blog.detail", post_id=post_id))
+    datastore = get_datastore()
+    post = datastore.get_post(post_id)
+    if not post:
+        abort(404)
+    action = (request.form.get("action") or "pin").strip().lower()
+    pinned = action != "unpin"
+    datastore.set_post_pinned(post_id, pinned)
+    flash("文章已置顶" if pinned else "已取消置顶", "success")
+    return redirect(url_for("blog.detail", post_id=post_id))
+
+
 @bp.route("/user/<username>", methods=["GET", "POST"])
 def user_profile(username: str):
     datastore = get_datastore()
@@ -757,4 +784,5 @@ def user_profile(username: str):
         can_edit_real_name=can_edit_real_name,
         viewing_self=viewing_self,
         favorite_posts=favorite_posts if viewing_self else None,
+        user_labels=datastore.get_user_labels(username),
     )

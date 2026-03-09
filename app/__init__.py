@@ -1,5 +1,6 @@
 import os
 import secrets
+import hmac
 from datetime import datetime
 from pathlib import Path
 
@@ -16,7 +17,22 @@ login_manager.login_view = "auth.login"
 def create_app() -> Flask:
     app = Flask(__name__, template_folder="templates", static_folder="static")
 
-    app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-key")
+    secret_key = os.getenv("SECRET_KEY", "")
+    if not secret_key:
+        import secrets as _secrets
+        secret_key = _secrets.token_hex(32)
+        import logging as _logging
+        _logging.getLogger(__name__).warning(
+            "SECRET_KEY 未设置，本次使用随机密钥（所有 session 将在重启后失效）。"
+            "请在生产部署中通过环境变量 SECRET_KEY 配置持久密钥。"
+        )
+    app.config["SECRET_KEY"] = secret_key
+    # Session cookie hardening
+    app.config.setdefault("SESSION_COOKIE_HTTPONLY", True)
+    app.config.setdefault("SESSION_COOKIE_SAMESITE", "Lax")
+    # HTTPS 环境下建议额外设置 SESSION_COOKIE_SECURE=True（通过环境变量启用）
+    if os.getenv("SESSION_COOKIE_SECURE", "").lower() in {"1", "true", "yes"}:
+        app.config["SESSION_COOKIE_SECURE"] = True
     data_path = Path(app.root_path).parent / "data"
     datastore = DataStore(data_path)
     app.extensions["datastore"] = datastore
@@ -28,12 +44,18 @@ def create_app() -> Flask:
     from .admin import bp as admin_bp
     from .messages import bp as messages_bp
     from .tag import bp as tag_bp
+    from .uploads import bp as uploads_bp
+    from .drive import bp as drive_bp
+    from .feedback import bp as feedback_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(blog_bp)
     app.register_blueprint(admin_bp, url_prefix="/admin")
     app.register_blueprint(messages_bp)
     app.register_blueprint(tag_bp)
+    app.register_blueprint(uploads_bp)
+    app.register_blueprint(drive_bp)
+    app.register_blueprint(feedback_bp)
 
     def _get_csrf_token() -> str:
         token = session.get("_csrf_token")
@@ -48,7 +70,7 @@ def create_app() -> Flask:
             return None
         token = session.get("_csrf_token")
         submitted = request.form.get("_csrf_token") or request.headers.get("X-CSRFToken")
-        if not token or not submitted or submitted != token:
+        if not token or not submitted or not hmac.compare_digest(submitted, token):
             abort(400)
 
     @app.before_request

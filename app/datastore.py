@@ -337,6 +337,59 @@ class DataStore:
                 CREATE INDEX IF NOT EXISTS idx_private_messages_sender_created
                     ON private_messages(sender, created_at DESC);
 
+                CREATE TABLE IF NOT EXISTS user_uploads (
+                    id TEXT PRIMARY KEY,
+                    username TEXT NOT NULL,
+                    filename TEXT NOT NULL,
+                    original_name TEXT NOT NULL,
+                    mime_type TEXT NOT NULL,
+                    file_size INTEGER NOT NULL,
+                    storage_type TEXT NOT NULL DEFAULT 'local',
+                    storage_url TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(username) REFERENCES users(username) ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_user_uploads_user ON user_uploads(username);
+
+                CREATE TABLE IF NOT EXISTS user_quotas (
+                    username TEXT PRIMARY KEY,
+                    quota_bytes INTEGER NOT NULL DEFAULT 10737418240,
+                    FOREIGN KEY(username) REFERENCES users(username) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS drive_files (
+                    id TEXT PRIMARY KEY,
+                    username TEXT NOT NULL,
+                    filename TEXT NOT NULL,
+                    original_name TEXT NOT NULL,
+                    mime_type TEXT NOT NULL,
+                    file_size INTEGER NOT NULL,
+                    parent_id TEXT,
+                    is_folder INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(username) REFERENCES users(username) ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_drive_files_user ON drive_files(username);
+                CREATE INDEX IF NOT EXISTS idx_drive_files_parent ON drive_files(parent_id);
+
+                CREATE TABLE IF NOT EXISTS feedback (
+                    id TEXT PRIMARY KEY,
+                    username TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    category TEXT NOT NULL DEFAULT 'general',
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    created_at TEXT NOT NULL,
+                    admin_reply TEXT,
+                    replied_at TEXT,
+                    FOREIGN KEY(username) REFERENCES users(username) ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_feedback_user ON feedback(username);
+                CREATE INDEX IF NOT EXISTS idx_feedback_status ON feedback(status);
+
                 CREATE TABLE IF NOT EXISTS message_preferences (
                     owner TEXT NOT NULL,
                     other_user TEXT NOT NULL,
@@ -346,6 +399,17 @@ class DataStore:
                     FOREIGN KEY(owner) REFERENCES users(username) ON DELETE CASCADE,
                     FOREIGN KEY(other_user) REFERENCES users(username) ON DELETE CASCADE
                 );
+
+                CREATE TABLE IF NOT EXISTS user_labels (
+                    id TEXT PRIMARY KEY,
+                    username TEXT NOT NULL,
+                    label TEXT NOT NULL,
+                    color TEXT NOT NULL DEFAULT 'blue',
+                    created_by TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(username) REFERENCES users(username) ON DELETE CASCADE
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_user_labels_unique ON user_labels(username, label);
                 """
             )
             columns = {
@@ -377,6 +441,13 @@ class DataStore:
             }
             if "is_hidden" in post_columns:
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_posts_hidden ON posts(is_hidden)")
+            post_columns = {
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(posts)")
+            }
+            if "is_pinned" not in post_columns:
+                conn.execute("ALTER TABLE posts ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0")
+                conn.execute("CREATE INDEX IF NOT EXISTS idx_posts_pinned ON posts(is_pinned)")
 
     def _ensure_root_node(self, conn: sqlite3.Connection) -> None:
         with conn:
@@ -949,9 +1020,9 @@ class DataStore:
         conn = self._conn()
         rows = conn.execute(
             """
-            SELECT id, author, title, content, created_at, updated_at, category_tag, class_tag, is_hidden
+            SELECT id, author, title, content, created_at, updated_at, category_tag, class_tag, is_hidden, is_pinned
             FROM posts
-            ORDER BY created_at DESC
+            ORDER BY is_pinned DESC, created_at DESC
             """
         ).fetchall()
         return self._build_posts_from_rows(rows)
@@ -978,10 +1049,10 @@ class DataStore:
             where = "WHERE " + " AND ".join(clauses)
         rows = conn.execute(
             f"""
-            SELECT id, author, title, content, created_at, updated_at, category_tag, class_tag, is_hidden
+            SELECT id, author, title, content, created_at, updated_at, category_tag, class_tag, is_hidden, is_pinned
             FROM posts
             {where}
-            ORDER BY created_at DESC
+            ORDER BY is_pinned DESC, created_at DESC
             """,
             params,
         ).fetchall()
@@ -991,7 +1062,7 @@ class DataStore:
         conn = self._conn()
         row = conn.execute(
             """
-            SELECT id, author, title, content, created_at, updated_at, category_tag, class_tag, is_hidden
+            SELECT id, author, title, content, created_at, updated_at, category_tag, class_tag, is_hidden, is_pinned
             FROM posts
             WHERE id = ?
             """,
@@ -1182,7 +1253,7 @@ class DataStore:
         conn = self._conn()
         rows = conn.execute(
             """
-            SELECT p.id, p.author, p.title, p.content, p.created_at, p.updated_at, p.category_tag, p.class_tag, pf.created_at AS favorited_at, p.is_hidden
+            SELECT p.id, p.author, p.title, p.content, p.created_at, p.updated_at, p.category_tag, p.class_tag, pf.created_at AS favorited_at, p.is_hidden, p.is_pinned
             FROM post_favorites AS pf
             JOIN posts AS p ON pf.post_id = p.id
             WHERE pf.username = ?
@@ -2172,7 +2243,7 @@ class DataStore:
         placeholders = ",".join(["?"] * len(tags))
         rows = conn.execute(
             f"""
-            SELECT p.id, p.author, p.title, p.content, p.created_at, p.updated_at, p.category_tag, p.class_tag, p.is_hidden
+            SELECT p.id, p.author, p.title, p.content, p.created_at, p.updated_at, p.category_tag, p.class_tag, p.is_hidden, p.is_pinned
             FROM posts AS p
             JOIN post_tags AS pt ON p.id = pt.post_id
             WHERE pt.tag IN ({placeholders})
@@ -2243,6 +2314,7 @@ class DataStore:
                     "comments": comments_map.get(post_id, []),
                     "favorite_count": favorite_counts.get(post_id, 0),
                     "is_hidden": bool(row["is_hidden"]) if "is_hidden" in row.keys() else False,
+                    "is_pinned": bool(row["is_pinned"]) if "is_pinned" in row.keys() else False,
                 }
             )
         return posts
@@ -2324,3 +2396,299 @@ class DataStore:
         if not isinstance(loaded, list):
             return []
         return [str(item) for item in loaded if isinstance(item, str)]
+
+    # Post pinning -----------------------------------------------------
+
+    def set_post_pinned(self, post_id: str, pinned: bool) -> None:
+        conn = self._conn()
+        with conn:
+            updated = conn.execute(
+                "UPDATE posts SET is_pinned = ? WHERE id = ?",
+                (1 if pinned else 0, post_id),
+            )
+            if updated.rowcount == 0:
+                raise ValueError("未找到文章")
+
+    # Upload / image hosting -------------------------------------------
+
+    DEFAULT_QUOTA_BYTES = 10 * 1024 * 1024 * 1024  # 10 GB
+
+    def get_user_quota(self, username: str) -> int:
+        conn = self._conn()
+        row = conn.execute(
+            "SELECT quota_bytes FROM user_quotas WHERE username = ?",
+            (username,),
+        ).fetchone()
+        if row:
+            return int(row["quota_bytes"])
+        return self.DEFAULT_QUOTA_BYTES
+
+    def set_user_quota(self, username: str, quota_bytes: int) -> None:
+        conn = self._conn()
+        with conn:
+            conn.execute(
+                """INSERT INTO user_quotas (username, quota_bytes) VALUES (?, ?)
+                   ON CONFLICT(username) DO UPDATE SET quota_bytes = excluded.quota_bytes""",
+                (username, max(0, quota_bytes)),
+            )
+
+    def get_user_used_space(self, username: str) -> int:
+        conn = self._conn()
+        row = conn.execute(
+            "SELECT COALESCE(SUM(file_size), 0) AS used FROM user_uploads WHERE username = ?",
+            (username,),
+        ).fetchone()
+        uploads_used = int(row["used"]) if row else 0
+        row2 = conn.execute(
+            "SELECT COALESCE(SUM(file_size), 0) AS used FROM drive_files WHERE username = ? AND is_folder = 0",
+            (username,),
+        ).fetchone()
+        drive_used = int(row2["used"]) if row2 else 0
+        return uploads_used + drive_used
+
+    def check_quota(self, username: str, additional_bytes: int) -> bool:
+        quota = self.get_user_quota(username)
+        used = self.get_user_used_space(username)
+        return (used + additional_bytes) <= quota
+
+    def add_upload(self, username: str, filename: str, original_name: str,
+                   mime_type: str, file_size: int, storage_type: str,
+                   storage_url: str) -> Dict[str, Any]:
+        upload_id = uuid.uuid4().hex
+        timestamp = utcnow_str()
+        conn = self._conn()
+        with conn:
+            conn.execute(
+                """INSERT INTO user_uploads (id, username, filename, original_name, mime_type,
+                   file_size, storage_type, storage_url, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (upload_id, username, filename, original_name, mime_type,
+                 file_size, storage_type, storage_url, timestamp),
+            )
+        return {
+            "id": upload_id, "username": username, "filename": filename,
+            "original_name": original_name, "mime_type": mime_type,
+            "file_size": file_size, "storage_type": storage_type,
+            "storage_url": storage_url, "created_at": timestamp,
+        }
+
+    def list_uploads(self, username: str) -> List[Dict[str, Any]]:
+        conn = self._conn()
+        rows = conn.execute(
+            "SELECT * FROM user_uploads WHERE username = ? ORDER BY created_at DESC",
+            (username,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_upload(self, upload_id: str) -> Optional[Dict[str, Any]]:
+        conn = self._conn()
+        row = conn.execute("SELECT * FROM user_uploads WHERE id = ?", (upload_id,)).fetchone()
+        return dict(row) if row else None
+
+    def delete_upload(self, upload_id: str) -> Optional[Dict[str, Any]]:
+        conn = self._conn()
+        row = conn.execute("SELECT * FROM user_uploads WHERE id = ?", (upload_id,)).fetchone()
+        if not row:
+            return None
+        record = dict(row)
+        with conn:
+            conn.execute("DELETE FROM user_uploads WHERE id = ?", (upload_id,))
+        return record
+
+    # Cloud drive ------------------------------------------------------
+
+    def add_drive_file(self, username: str, filename: str, original_name: str,
+                       mime_type: str, file_size: int, parent_id: Optional[str] = None,
+                       is_folder: bool = False) -> Dict[str, Any]:
+        file_id = uuid.uuid4().hex
+        timestamp = utcnow_str()
+        conn = self._conn()
+        with conn:
+            if parent_id:
+                parent = conn.execute(
+                    "SELECT id FROM drive_files WHERE id = ? AND username = ? AND is_folder = 1",
+                    (parent_id, username),
+                ).fetchone()
+                if not parent:
+                    raise ValueError("父文件夹不存在")
+            conn.execute(
+                """INSERT INTO drive_files (id, username, filename, original_name, mime_type,
+                   file_size, parent_id, is_folder, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (file_id, username, filename, original_name, mime_type,
+                 file_size, parent_id, 1 if is_folder else 0, timestamp, timestamp),
+            )
+        return {
+            "id": file_id, "username": username, "filename": filename,
+            "original_name": original_name, "mime_type": mime_type,
+            "file_size": file_size, "parent_id": parent_id,
+            "is_folder": is_folder, "created_at": timestamp, "updated_at": timestamp,
+        }
+
+    def list_drive_files(self, username: str, parent_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        conn = self._conn()
+        if parent_id:
+            rows = conn.execute(
+                "SELECT * FROM drive_files WHERE username = ? AND parent_id = ? ORDER BY is_folder DESC, original_name",
+                (username, parent_id),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM drive_files WHERE username = ? AND parent_id IS NULL ORDER BY is_folder DESC, original_name",
+                (username,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_drive_file(self, file_id: str) -> Optional[Dict[str, Any]]:
+        conn = self._conn()
+        row = conn.execute("SELECT * FROM drive_files WHERE id = ?", (file_id,)).fetchone()
+        return dict(row) if row else None
+
+    def rename_drive_file(self, file_id: str, new_name: str) -> None:
+        conn = self._conn()
+        with conn:
+            conn.execute(
+                "UPDATE drive_files SET original_name = ?, updated_at = ? WHERE id = ?",
+                (new_name, utcnow_str(), file_id),
+            )
+
+    def delete_drive_file(self, file_id: str) -> Optional[Dict[str, Any]]:
+        conn = self._conn()
+        row = conn.execute("SELECT * FROM drive_files WHERE id = ?", (file_id,)).fetchone()
+        if not row:
+            return None
+        record = dict(row)
+        with conn:
+            if record["is_folder"]:
+                self._delete_drive_folder_recursive(conn, file_id, record["username"])
+            conn.execute("DELETE FROM drive_files WHERE id = ?", (file_id,))
+        return record
+
+    def _delete_drive_folder_recursive(self, conn: sqlite3.Connection, folder_id: str, username: str) -> List[Dict[str, Any]]:
+        children = conn.execute(
+            "SELECT id, is_folder, filename FROM drive_files WHERE parent_id = ? AND username = ?",
+            (folder_id, username),
+        ).fetchall()
+        deleted = []
+        for child in children:
+            if child["is_folder"]:
+                deleted.extend(self._delete_drive_folder_recursive(conn, child["id"], username))
+            deleted.append(dict(child))
+            conn.execute("DELETE FROM drive_files WHERE id = ?", (child["id"],))
+        return deleted
+
+    def get_drive_path(self, file_id: str) -> List[Dict[str, Any]]:
+        conn = self._conn()
+        path = []
+        current_id = file_id
+        while current_id:
+            row = conn.execute("SELECT id, original_name, parent_id FROM drive_files WHERE id = ?", (current_id,)).fetchone()
+            if not row:
+                break
+            path.insert(0, {"id": row["id"], "name": row["original_name"]})
+            current_id = row["parent_id"]
+        return path
+
+    # Feedback ---------------------------------------------------------
+
+    def add_feedback(self, username: str, content: str, category: str = "general") -> Dict[str, Any]:
+        feedback_id = uuid.uuid4().hex
+        timestamp = utcnow_str()
+        conn = self._conn()
+        with conn:
+            conn.execute(
+                "INSERT INTO feedback (id, username, content, category, status, created_at) VALUES (?, ?, ?, ?, 'pending', ?)",
+                (feedback_id, username, content.strip(), category.strip(), timestamp),
+            )
+        return {"id": feedback_id, "username": username, "content": content.strip(),
+                "category": category, "status": "pending", "created_at": timestamp}
+
+    def list_feedback(self, username: Optional[str] = None, status: Optional[str] = None) -> List[Dict[str, Any]]:
+        conn = self._conn()
+        clauses = []
+        params: list = []
+        if username:
+            clauses.append("username = ?")
+            params.append(username)
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        rows = conn.execute(f"SELECT * FROM feedback{where} ORDER BY created_at DESC", params).fetchall()
+        return [dict(row) for row in rows]
+
+    def reply_feedback(self, feedback_id: str, reply: str) -> None:
+        conn = self._conn()
+        with conn:
+            conn.execute(
+                "UPDATE feedback SET admin_reply = ?, replied_at = ?, status = 'replied' WHERE id = ?",
+                (reply.strip(), utcnow_str(), feedback_id),
+            )
+
+    def close_feedback(self, feedback_id: str) -> None:
+        conn = self._conn()
+        with conn:
+            conn.execute("UPDATE feedback SET status = 'closed' WHERE id = ?", (feedback_id,))
+
+    # ─── User Labels ───
+
+    def add_user_label(self, username: str, label: str, color: str, created_by: str) -> dict:
+        """Attach a label/badge to a user (admin-only by convention in the view layer)."""
+        label = label.strip()[:50]
+        color = color.strip()[:20] if color else "blue"
+        if not label:
+            raise ValueError("标签名不能为空")
+        label_id = str(uuid.uuid4())
+        conn = self._conn()
+        with conn:
+            conn.execute(
+                """INSERT INTO user_labels (id, username, label, color, created_by, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(username, label) DO UPDATE SET
+                       color=excluded.color,
+                       created_by=excluded.created_by,
+                       created_at=excluded.created_at""",
+                (label_id, username, label, color, created_by, utcnow_str()),
+            )
+        return {"id": label_id, "username": username, "label": label, "color": color, "created_by": created_by}
+
+    def remove_user_label(self, username: str, label: str) -> None:
+        conn = self._conn()
+        with conn:
+            conn.execute("DELETE FROM user_labels WHERE username = ? AND label = ?", (username, label))
+
+    def get_user_labels(self, username: str) -> list:
+        conn = self._conn()
+        rows = conn.execute(
+            "SELECT * FROM user_labels WHERE username = ? ORDER BY created_at",
+            (username,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def add_user_label(self, username: str, label: str, color: str, created_by: str) -> None:
+        conn = self._conn()
+        with conn:
+            try:
+                conn.execute(
+                    "INSERT INTO user_labels (id, username, label, color, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                    (str(uuid.uuid4()), username, label, color, created_by, utcnow_str()),
+                )
+            except sqlite3.IntegrityError:
+                raise ValueError(f"用户 {username} 已有标签「{label}」")
+
+    def remove_user_label(self, username: str, label: str) -> None:
+        conn = self._conn()
+        with conn:
+            conn.execute("DELETE FROM user_labels WHERE username = ? AND label = ?", (username, label))
+
+    def list_all_user_labels(self) -> dict:
+        """Returns a dict mapping username -> list of label dicts."""
+        conn = self._conn()
+        rows = conn.execute("SELECT * FROM user_labels ORDER BY created_at").fetchall()
+        result = {}
+        for row in rows:
+            u = row["username"]
+            if u not in result:
+                result[u] = []
+            result[u].append(dict(row))
+        return result

@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+{% block title %}云盘 - BNDS Blog{% endblock %}
+{% block extra_head %}
+{{ super() }}
+<style>
+.drive-header { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem; margin-bottom:1rem; }
+.drive-breadcrumb { display:flex; align-items:center; gap:.3rem; font-size:.9rem; color:var(--text-muted); flex-wrap:wrap; }
+.drive-breadcrumb a { color:var(--primary); text-decoration:none; }
+.drive-breadcrumb a:hover { text-decoration:underline; }
+.drive-breadcrumb .sep { color:var(--text-subtle); }
+.drive-toolbar { display:flex; gap:.5rem; flex-wrap:wrap; }
+.quota-bar { width:100%; max-width:260px; height:6px; border-radius:999px; background:rgba(148,163,184,.2); overflow:hidden; }
+.quota-fill { height:100%; border-radius:999px; background:linear-gradient(90deg,var(--primary),var(--accent)); transition:width .3s; }
+.quota-text { font-size:.8rem; color:var(--text-muted); margin-top:.25rem; }
+.file-table { width:100%; border-collapse:collapse; }
+.file-table th,.file-table td { text-align:left; padding:.7rem .9rem; border-bottom:1px solid var(--border-color); }
+.file-table th { font-weight:600; font-size:.85rem; color:var(--text-muted); background:rgba(79,70,229,.04); }
+.file-table tr:hover { background:rgba(79,70,229,.03); }
+.file-table .file-icon { margin-right:.5rem; }
+.file-name { font-weight:600; }
+.file-name a { color:var(--text-color); text-decoration:none; }
+.file-name a:hover { color:var(--primary); }
+.file-meta { font-size:.85rem; color:var(--text-muted); }
+.drive-empty { text-align:center; padding:3rem 1rem; color:var(--text-muted); border:1px dashed var(--border-color); border-radius:var(--radius-md); }
+/* Context menu */
+.ctx-menu { position:fixed; z-index:9999; min-width:160px; background:var(--surface-color); border:1px solid var(--border-color); border-radius:var(--radius-sm); box-shadow:0 8px 24px rgba(15,23,42,.15); padding:4px 0; display:none; }
+.ctx-menu.visible { display:block; }
+.ctx-menu-item { padding:8px 16px; cursor:pointer; font-size:.88rem; transition:background .15s; color:var(--text-color); }
+.ctx-menu-item:hover { background:rgba(79,70,229,.08); color:var(--primary); }
+.ctx-menu-item.danger { color:var(--danger); }
+.ctx-menu-item.danger:hover { background:rgba(239,68,68,.08); }
+.ctx-sep { height:1px; background:var(--border-color); margin:4px 0; }
+/* Upload modal */
+.drive-upload-zone { border:2px dashed var(--border-color); border-radius:var(--radius-md); padding:1.5rem; text-align:center; cursor:pointer; transition:border-color .2s; margin-bottom:1rem; }
+.drive-upload-zone:hover,.drive-upload-zone.drag-over { border-color:var(--primary); background:rgba(79,70,229,.04); }
+.drive-upload-zone input { display:none; }
+@media (prefers-color-scheme:dark) {
+ .file-table th { background:rgba(99,102,241,.08); }
+ .file-table tr:hover { background:rgba(99,102,241,.06); }
+ .ctx-menu { background:rgba(16,22,38,.98); border-color:rgba(148,163,184,.18); box-shadow:0 8px 24px rgba(0,0,0,.5); }
+ .ctx-menu-item:hover { background:rgba(99,102,241,.15); }
+}
+</style>
+{% endblock %}
+{% block content %}
+<section class="card">
+    <div class="drive-header">
+        <div>
+            <h1 style="margin:0 0 .3rem">云盘</h1>
+            <div class="drive-breadcrumb">
+                <a href="{{ url_for('drive.index') }}">根目录</a>
+                {% for p in path %}
+                <span class="sep">/</span>
+                <a href="{{ url_for('drive.index', folder=p.id) }}">{{ p.name }}</a>
+                {% endfor %}
+            </div>
+        </div>
+        <div>
+            <div class="quota-bar"><div class="quota-fill" style="width:{{ (used / quota * 100) if quota > 0 else 0 }}%"></div></div>
+            <p class="quota-text">{{ "%.2f"|format(used / 1024 / 1024 / 1024) }} / {{ "%.1f"|format(quota / 1024 / 1024 / 1024) }} GB</p>
+        </div>
+    </div>
+    <div class="drive-toolbar">
+        <button class="button primary small" onclick="document.getElementById('driveFileInput').click()">上传文件</button>
+        <button class="button small" onclick="promptNewFolder()">新建文件夹</button>
+        <input type="file" id="driveFileInput" multiple style="display:none">
+    </div>
+
+    <div class="drive-upload-zone" id="driveUploadZone" style="margin-top:1rem">
+        <p style="margin:0;color:var(--text-muted)">拖拽文件到此处上传</p>
+    </div>
+
+    {% if files %}
+    <div class="responsive-table" style="margin-top:1rem">
+        <table class="file-table">
+            <thead><tr><th>名称</th><th>大小</th><th>修改时间</th></tr></thead>
+            <tbody>
+            {% for f in files %}
+            <tr data-id="{{ f.id }}" data-folder="{{ f.is_folder }}" data-name="{{ f.original_name }}" oncontextmenu="showCtx(event,this)">
+                <td class="file-name">
+                    {% if f.is_folder %}
+                        <span class="file-icon">📁</span>
+                        <a href="{{ url_for('drive.index', folder=f.id) }}">{{ f.original_name }}</a>
+                    {% else %}
+                        <span class="file-icon">📄</span>
+                        <a href="{{ url_for('drive.download', file_id=f.id) }}">{{ f.original_name }}</a>
+                    {% endif %}
+                </td>
+                <td class="file-meta">{% if f.is_folder %}—{% else %}{{ format_size(f.file_size) }}{% endif %}</td>
+                <td class="file-meta">{{ f.updated_at[:16].replace('T',' ') }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="drive-empty">
+        <p>此文件夹为空，上传文件或新建子文件夹开始使用</p>
+    </div>
+    {% endif %}
+</section>
+
+<!-- Context menu -->
+<div class="ctx-menu" id="ctxMenu">
+    <div class="ctx-menu-item" data-action="open">打开</div>
+    <div class="ctx-menu-item" data-action="rename">重命名</div>
+    <div class="ctx-menu-item" data-action="download">下载</div>
+    <div class="ctx-sep"></div>
+    <div class="ctx-menu-item danger" data-action="delete">删除</div>
+</div>
+
+<script>
+(function(){
+    var csrf = '{{ csrf_token() }}';
+    var parentId = {{ ('"' + parent_id + '"') if parent_id else 'null' }};
+    var ctxMenu = document.getElementById('ctxMenu');
+    var currentRow = null;
+
+    // Upload
+    var fileInput = document.getElementById('driveFileInput');
+    var uploadZone = document.getElementById('driveUploadZone');
+
+    fileInput.addEventListener('change', function(){ if(fileInput.files.length) uploadFiles(fileInput.files); });
+    uploadZone.addEventListener('dragover', function(e){ e.preventDefault(); uploadZone.classList.add('drag-over'); });
+    uploadZone.addEventListener('dragleave', function(){ uploadZone.classList.remove('drag-over'); });
+    uploadZone.addEventListener('drop', function(e){
+        e.preventDefault(); uploadZone.classList.remove('drag-over');
+        if(e.dataTransfer.files.length) uploadFiles(e.dataTransfer.files);
+    });
+
+    function uploadFiles(files){
+        var total=files.length, done=0;
+        Array.from(files).forEach(function(file){
+            var fd=new FormData();
+            fd.append('file',file);
+            fd.append('_csrf_token',csrf);
+            if(parentId) fd.append('parent_id',parentId);
+            fetch('{{ url_for("drive.api_upload") }}',{method:'POST',headers:{'X-CSRFToken':csrf},body:fd})
+            .then(function(r){return r.json()}).then(function(d){
+                done++;
+                if(!d.success) alert(d.message);
+                if(done===total) location.reload();
+            }).catch(function(){ done++; if(done===total) location.reload(); });
+        });
+    }
+
+    // New folder
+    window.promptNewFolder = function(){
+        var name = prompt('请输入文件夹名称：');
+        if(!name||!name.trim()) return;
+        var fd=new FormData();
+        fd.append('name',name.trim());
+        fd.append('_csrf_token',csrf);
+        if(parentId) fd.append('parent_id',parentId);
+        fetch('{{ url_for("drive.api_mkdir") }}',{method:'POST',headers:{'X-CSRFToken':csrf},body:fd})
+        .then(function(r){return r.json()}).then(function(d){
+            if(d.success) location.reload(); else alert(d.message);
+        });
+    };
+
+    // Context menu
+    window.showCtx = function(e, row){
+        e.preventDefault();
+        currentRow = row;
+        ctxMenu.style.left = e.clientX+'px';
+        ctxMenu.style.top = e.clientY+'px';
+        ctxMenu.classList.add('visible');
+        // position fix
+        var rect = ctxMenu.getBoundingClientRect();
+        if(rect.right > window.innerWidth) ctxMenu.style.left = (window.innerWidth - rect.width - 8)+'px';
+        if(rect.bottom > window.innerHeight) ctxMenu.style.top = (window.innerHeight - rect.height - 8)+'px';
+    };
+
+    document.addEventListener('click', function(){ ctxMenu.classList.remove('visible'); });
+
+    ctxMenu.addEventListener('click', function(e){
+        var item = e.target.closest('.ctx-menu-item');
+        if(!item||!currentRow) return;
+        var action=item.dataset.action;
+        var id=currentRow.dataset.id;
+        var isFolder=currentRow.dataset.folder==='True'||currentRow.dataset.folder==='1';
+        var name=currentRow.dataset.name;
+
+        if(action==='open'){
+            if(isFolder) location.href='{{ url_for("drive.index") }}?folder='+id;
+            else location.href='{{ url_for("drive.download", file_id="__ID__") }}'.replace('__ID__',id);
+        } else if(action==='rename'){
+            var newName=prompt('新名称：',name);
+            if(!newName||!newName.trim()) return;
+            var fd=new FormData();
+            fd.append('id',id); fd.append('name',newName.trim()); fd.append('_csrf_token',csrf);
+            fetch('{{ url_for("drive.api_rename") }}',{method:'POST',headers:{'X-CSRFToken':csrf},body:fd})
+            .then(function(r){return r.json()}).then(function(d){
+                if(d.success) location.reload(); else alert(d.message);
+            });
+        } else if(action==='download'){
+            if(!isFolder) location.href='{{ url_for("drive.download", file_id="__ID__") }}'.replace('__ID__',id);
+        } else if(action==='delete'){
+            if(!confirm('确定要删除 "'+name+'" 吗？')) return;
+            var fd=new FormData();
+            fd.append('id',id); fd.append('_csrf_token',csrf);
+            fetch('{{ url_for("drive.api_delete") }}',{method:'POST',headers:{'X-CSRFToken':csrf},body:fd})
+            .then(function(r){return r.json()}).then(function(d){
+                if(d.success) location.reload(); else alert(d.message);
+            });
+        }
+        ctxMenu.classList.remove('visible');
+    });
+})();
+</script>
+{% endblock %}
