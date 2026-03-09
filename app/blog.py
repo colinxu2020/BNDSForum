@@ -543,7 +543,13 @@ def favorite(post_id: str):
     title_display = post.get("title", "")
     title_display = title_display if len(title_display) <= 40 else title_display[:37] + "…"
     action = (request.form.get("action") or "add").strip().lower()
-    next_url = request.form.get("next") or request.referrer or url_for("blog.detail", post_id=post_id)
+    next_url = (request.form.get("next") or "").strip()
+    if not next_url:
+        next_url = request.referrer or url_for("blog.detail", post_id=post_id)
+    # 安全检查：确保跳转 URL 不会跳转到站外（防止 Open Redirect），如果包含域名且不是本站则重置
+    if next_url.startswith(("http://", "https://")) and request.host not in next_url:
+        next_url = url_for("blog.detail", post_id=post_id)
+    
     try:
         if action == "remove":
             removed = datastore.unfavorite_post(post_id, current_user.username)

@@ -51,7 +51,7 @@
                         <div class="post-shortcuts">
                             <form class="favorite-inline-form" method="post" action="{{ url_for('blog.favorite', post_id=post['id']) }}">
                                 <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-                                <input type="hidden" name="next" value="{{ request.path }}">
+                                <input type="hidden" name="next" value="{{ request.full_path }}">
                                 <input type="hidden" name="action" value="remove">
                                 <button type="submit" class="button secondary small">取消收藏</button>
                             </form>

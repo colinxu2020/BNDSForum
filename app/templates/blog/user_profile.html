@@ -116,7 +116,7 @@
                             {% if current_user.is_authenticated %}
                                 <form class="favorite-inline-form" method="post" action="{{ url_for('blog.favorite', post_id=post['id']) }}">
                                     <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-                                    <input type="hidden" name="next" value="{{ request.path }}">
+                                    <input type="hidden" name="next" value="{{ request.full_path }}">
                                     <input type="hidden" name="action" value="{{ 'remove' if post['is_favorited'] else 'add' }}">
                                     <button type="submit" class="button secondary small">
                                         {% if post['is_favorited'] %}取消收藏{% else %}收藏{% endif %}
@@ -168,7 +168,7 @@
                             <span class="favorite-count">总收藏：{{ post['favorite_count'] }}</span>
                             <form class="favorite-inline-form" method="post" action="{{ url_for('blog.favorite', post_id=post['id']) }}">
                                 <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-                                <input type="hidden" name="next" value="{{ request.path }}">
+                                <input type="hidden" name="next" value="{{ request.full_path }}">
                                 <input type="hidden" name="action" value="remove">
                                 <button type="submit" class="button secondary small">取消收藏</button>
                             </form>
