@@ -19,7 +19,6 @@ from flask_login import current_user, login_required
 from werkzeug.utils import secure_filename
 
 from .datastore import DataStore
-from .security import path_is_within
 
 bp = Blueprint("uploads", __name__, url_prefix="/uploads")
 logger = logging.getLogger(__name__)
