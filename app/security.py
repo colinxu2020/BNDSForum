@@ -17,35 +17,29 @@ def current_path_with_query() -> str:
 
 
 def safe_redirect_target(target: str | None, fallback: str) -> str:
-    candidate = (target or "").strip()
-    if not candidate:
+    from werkzeug.urls import url_parse
+    target = (target or "").strip()
+    if not target:
         return fallback
 
-    parsed = urlparse(candidate)
-    if parsed.scheme:
-        if parsed.scheme not in _ALLOWED_REDIRECT_SCHEMES:
-            return fallback
-        if parsed.netloc != request.host:
-            return fallback
-        normalized = urlunparse(("", "", parsed.path or "/", parsed.params, parsed.query, parsed.fragment))
-        return normalized or fallback
-
+    # Reconstruct the URL without netloc to guarantee an intra-site redirect
+    parsed = urlparse(target)
     if parsed.netloc:
-        return fallback
-    if not candidate.startswith("/"):
-        return fallback
-    if candidate.startswith("//"):
-        return fallback
-    return candidate
+        if parsed.netloc.lower() != request.host.lower():
+            return fallback
+
+    # Reconstructing guarantees we lose any tricky authority prefix
+    safe_path = parsed.path or "/"
+    if parsed.query:
+        safe_path += f"?{parsed.query}"
+    
+    # Avoid protocol-relative URLs that might trick browsers
+    if safe_path.startswith("//"):
+        safe_path = "/" + safe_path.lstrip("/")
+        
+    return safe_path
 
 
 def login_redirect_target() -> str:
     return url_for("auth.login", next=current_path_with_query())
 
-
-def path_is_within(base_dir: Path, target: Path) -> bool:
-    try:
-        target.resolve().relative_to(base_dir.resolve())
-        return True
-    except ValueError:
-        return False

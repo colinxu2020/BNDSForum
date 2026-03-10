@@ -223,10 +223,10 @@
                 '<td><div class="share-file-meta">有效期：' + escapeHtml(formatDate(item.expires_at)) + '</div><div class="share-file-meta" style="margin-top:.35rem;">下载：' + escapeHtml(limitText) + '</div></td>' +
                 '<td>' + statusChip(item.status) + '</td>' +
                 '<td><div class="share-actions">' +
-                    '<button type="button" class="button small" onclick="copyShareFromCenter(\'' + item.id + '\')">复制</button>' +
-                    '<button type="button" class="button small" onclick="openShareEdit(\'' + item.id + '\')">编辑</button>' +
-                    '<button type="button" class="button small" onclick="loadShareLogs(\'' + item.id + '\')">日志</button>' +
-                    '<button type="button" class="button danger small" onclick="revokeShareFromCenter(\'' + item.id + '\')">撤销</button>' +
+                    '<button type="button" class="button small" onclick="copyShareFromCenter(\'' + escapeHtml(item.id) + '\')">复制</button>' +
+                    '<button type="button" class="button small" onclick="openShareEdit(\'' + escapeHtml(item.id) + '\')">编辑</button>' +
+                    '<button type="button" class="button small" onclick="loadShareLogs(\'' + escapeHtml(item.id) + '\')">日志</button>' +
+                    '<button type="button" class="button danger small" onclick="revokeShareFromCenter(\'' + escapeHtml(item.id) + '\')">撤销</button>' +
                 '</div></td>' +
             '</tr>';
         });
@@ -265,8 +265,10 @@
         document.getElementById('shareEditExpiresAt').value = normalizeForInput(item.expires_at);
         document.getElementById('shareEditMaxDownloads').value = item.max_downloads || '';
         document.getElementById('shareEditRequireLogin').checked = !!item.require_login;
-        document.getElementById('shareEditQr').src = item.qr_url;
-        document.getElementById('shareEditVisitLink').href = item.share_url;
+        document.getElementById('shareEditQr').setAttribute('src', item.qr_url);
+        if (item.share_url && (item.share_url.startsWith('http://') || item.share_url.startsWith('https://') || item.share_url.startsWith('/'))) {
+            document.getElementById('shareEditVisitLink').href = item.share_url;
+        }
         editOverlay.classList.add('visible');
     };
 

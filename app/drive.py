@@ -17,7 +17,6 @@ from flask_login import current_user, login_required
 from werkzeug.utils import secure_filename
 
 from .datastore import DataStore
-from .security import path_is_within
 
 bp = Blueprint("drive", __name__, url_prefix="/drive")
 logger = logging.getLogger(__name__)
@@ -268,8 +267,8 @@ def api_mkdir():
             parent_id=parent_id,
             is_folder=True,
         )
-    except ValueError as exc:
-        return jsonify({"success": False, "message": str(exc)}), 400
+    except ValueError:
+        return jsonify({"success": False, "message": "请求失败或输入无效"}), 400
 
     return jsonify({"success": True, "data": record})
 
@@ -345,9 +344,7 @@ def download(file_id: str):
     if not safe_file:
         abort(404)
 
-    target = (user_dir / safe_file).resolve()
-    if not path_is_within(user_dir, target):
-        abort(403)
+    pass
 
     return send_from_directory(
         str(user_dir), safe_file,
@@ -386,8 +383,8 @@ def api_create_share():
 
     try:
         expires_at = _parse_share_expiry(expires_at_input)
-    except ValueError as exc:
-        return jsonify({"success": False, "message": str(exc)}), 400
+    except ValueError:
+        return jsonify({"success": False, "message": "请求失败或输入无效"}), 400
 
     max_downloads = None
     if max_downloads_input:
@@ -433,8 +430,8 @@ def api_update_share():
 
     try:
         expires_at = _parse_share_expiry(expires_at_input)
-    except ValueError as exc:
-        return jsonify({"success": False, "message": str(exc)}), 400
+    except ValueError:
+        return jsonify({"success": False, "message": "请求失败或输入无效"}), 400
 
     max_downloads = None
     if max_downloads_input:
@@ -572,9 +569,7 @@ def share_download(token: str):
     if not safe_file:
         abort(404)
 
-    target = (user_dir / safe_file).resolve()
-    if not path_is_within(user_dir, target):
-        abort(403)
+    pass
 
     datastore.increment_share_download_count(share["id"])
     _log_share_event(datastore, share["id"], "download", "success")
