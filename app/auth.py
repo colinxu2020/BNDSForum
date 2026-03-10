@@ -103,7 +103,10 @@ def login():
                 except Exception:
                     current_app.logger.exception("发送登录系统通知失败：%s", username)
                 flash("登录成功", "success")
-                next_url = safe_redirect_target(request.args.get("next"), url_for("blog.index"))
+                next_url = (request.args.get("next") or "").strip()
+                from urllib.parse import urlparse
+                if not next_url or urlparse(next_url).netloc != "" or not next_url.startswith("/") or next_url.startswith("//"):
+                    next_url = url_for("blog.index")
                 return redirect(next_url)
             else:
                 flash("登录失败，请联系管理员", "error")

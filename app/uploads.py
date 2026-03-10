@@ -265,12 +265,11 @@ def api_delete(upload_id: str):
     # Delete local file if applicable
     if record["storage_type"] == "local":
         try:
+            import os
             from werkzeug.utils import safe_join
-            safe_path = safe_join(str(_user_dir(record["username"])), record["filename"])
-            if safe_path:
-                path = Path(safe_path)
-                if path.exists():
-                    path.unlink()
+            safe_path = safe_join(str(_user_dir(record["username"])), secure_filename(record["filename"]))
+            if safe_path and os.path.exists(safe_path):
+                os.unlink(safe_path)
         except OSError:
             logger.warning("删除本地文件失败: %s", record["filename"])
 
@@ -280,6 +279,11 @@ def api_delete(upload_id: str):
 
 @bp.route("/image/<username>/<filename>")
 def serve_image(username: str, filename: str):
+    if not username or ".." in username or "/" in username or "\\" in username:
+        abort(400)
+    if not filename or ".." in filename or "/" in filename or "\\" in filename:
+        abort(400)
+
     safe_user = secure_filename(username)
     safe_file = secure_filename(filename)
     if not safe_user or not safe_file:
@@ -290,15 +294,15 @@ def serve_image(username: str, filename: str):
     if not directory_str:
         abort(404)
         
-    directory = Path(directory_str)
-    if not directory.exists():
+    import os
+    if not os.path.exists(directory_str):
         abort(404)
 
     ext = safe_file.rsplit(".", 1)[-1].lower() if "." in safe_file else ""
     # Force download (attachment) for any type that could execute inline in browser
     from flask import make_response
     try:
-        resp = make_response(send_from_directory(str(directory), safe_file))
+        resp = make_response(send_from_directory(directory_str, safe_file))
     except Exception:
         abort(404)
     resp.headers["X-Content-Type-Options"] = "nosniff"

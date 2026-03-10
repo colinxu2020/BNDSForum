@@ -39,7 +39,13 @@ def check_admin():
 
 
 def _safe_admin_return_target(value: str | None, fallback: str | None = None) -> str:
-    return safe_redirect_target(value, fallback or url_for("admin.user_list"))
+    from urllib.parse import urlparse
+    val = (value or "").strip()
+    if not val or urlparse(val).netloc != "":
+        return fallback or url_for("admin.user_list")
+    if not val.startswith("/") or val.startswith("//"):
+        return fallback or url_for("admin.user_list")
+    return val
 
 
 _INVALID_SEGMENT_CHARS = set('<>:"/\\|?*')

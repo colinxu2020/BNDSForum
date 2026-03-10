@@ -547,7 +547,10 @@ def favorite(post_id: str):
     next_url = (request.form.get("next") or "").strip()
     if not next_url:
         next_url = request.referrer or url_for("blog.detail", post_id=post_id)
-    next_url = safe_redirect_target(next_url, url_for("blog.detail", post_id=post_id))
+    
+    from urllib.parse import urlparse
+    if not next_url or urlparse(next_url).netloc != "" or not next_url.startswith("/") or next_url.startswith("//"):
+        next_url = url_for("blog.detail", post_id=post_id)
     
     try:
         if action == "remove":
