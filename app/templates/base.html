@@ -1,10 +1,35 @@
 <!DOCTYPE html>
-<html lang="zh-Hans">
+<html lang="zh-Hans" data-server-theme="{{ theme_preference or '' }}">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{% block title %}BNDS Blog{% endblock %}</title>
+    <script>
+        (function () {
+            var root = document.documentElement;
+            var serverTheme = root.getAttribute('data-server-theme') || null;
+            var storedTheme = null;
+            try {
+                storedTheme = window.localStorage.getItem('bnds-theme');
+            } catch (err) {
+                storedTheme = null;
+            }
+            var theme = serverTheme || storedTheme || 'light';
+            if (theme !== 'dark') {
+                theme = 'light';
+            }
+            root.setAttribute('data-theme', theme);
+            window.__BNDS_THEME__ = theme;
+            if (serverTheme) {
+                try {
+                    window.localStorage.setItem('bnds-theme', theme);
+                } catch (err) {
+                    /* ignore */
+                }
+            }
+        }());
+    </script>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <style>
         /* 新增：导航栏下拉菜单样式 */
@@ -40,28 +65,28 @@
             top: 100%;
             left: 50%;
             transform: translateX(-50%) translateY(10px);
-            background-color: #ffffff;
+            background: var(--surface-color);
             min-width: 160px;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+            box-shadow: var(--shadow-soft);
             border-radius: 8px;
             padding: 8px 0;
             z-index: 1000;
-            border: 1px solid #e2e8f0;
+            border: 1px solid var(--border-color);
         }
 
         .dropdown-menu a {
-            color: #334155;
+            color: var(--text-color);
             padding: 10px 16px;
             text-decoration: none;
             display: block;
             font-size: 14px;
             white-space: nowrap;
-            transition: background-color 0.2s;
+            transition: background-color 0.2s, color 0.2s;
         }
 
         .dropdown-menu a:hover {
-            background-color: #f1f5f9;
-            color: #0ea5e9;
+            background-color: rgba(79, 70, 229, 0.08);
+            color: var(--primary);
         }
 
         /* 增加一个小箭头 */
@@ -73,7 +98,7 @@
             margin-left: -6px;
             border-width: 0 6px 6px;
             border-style: solid;
-            border-color: transparent transparent #ffffff;
+            border-color: transparent transparent var(--surface-color);
         }
 
         /* 右对齐下拉菜单 */
@@ -91,23 +116,16 @@
             margin-left: 0;
         }
 
-        /* ===== 暗黑模式 — 必须放在通用规则之后才能覆盖 ===== */
-        @media (prefers-color-scheme: dark) {
-            .dropdown-menu {
-                background-color: #1e2a3a;
-                border-color: #2d3f55;
-                box-shadow: 0 8px 32px rgba(0,0,0,0.55);
-            }
-            .dropdown-menu a {
-                color: #e2e8f0 !important;
-            }
-            .dropdown-menu a:hover {
-                background-color: #2d3f55;
-                color: #7dd3fc !important;
-            }
-            .dropdown-menu::before {
-                border-color: transparent transparent #1e2a3a;
-            }
+        :root[data-theme="dark"] .dropdown-menu {
+            background: rgba(16, 22, 38, 0.98);
+            border-color: rgba(148, 163, 184, 0.18);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.55);
+        }
+        :root[data-theme="dark"] .dropdown-menu a:hover {
+            background-color: rgba(99, 102, 241, 0.15);
+        }
+        :root[data-theme="dark"] .dropdown-menu::before {
+            border-color: transparent transparent rgba(16, 22, 38, 0.98);
         }
     </style>
     {% block extra_head %}{% endblock %}
@@ -152,8 +170,10 @@
                         <span class="dropdown-trigger">个人中心 &#9662;</span>
                         <div class="dropdown-menu dropdown-right">
                             <a href="{{ url_for('blog.user_profile', username=current_user.username) }}">我的主页</a>
+                            <a href="{{ url_for('blog.user_profile', username=current_user.username, _anchor='appearance-settings') }}">外观设置</a>
                             <a href="{{ url_for('blog.favorites') }}">我的收藏</a>
                             <a href="{{ url_for('drive.index') }}">我的云盘</a>
+                            <a href="{{ url_for('drive.shares') }}">我的分享</a>
                             <a href="{{ url_for('uploads.index') }}">图床</a>
                             <a href="{{ url_for('feedback.form') }}">用户反馈</a>
                         </div>
@@ -199,6 +219,20 @@
             this.setAttribute('aria-expanded', (!expanded).toString());
             links.classList.toggle('is-open', !expanded);
         });
+    }());
+
+    (function () {
+        window.setBNDSTheme = function (theme) {
+            var resolved = theme === 'dark' ? 'dark' : 'light';
+            document.documentElement.setAttribute('data-theme', resolved);
+            window.__BNDS_THEME__ = resolved;
+            try {
+                window.localStorage.setItem('bnds-theme', resolved);
+            } catch (err) {
+                /* ignore */
+            }
+            document.dispatchEvent(new CustomEvent('bnds:theme-change', { detail: { theme: resolved } }));
+        };
     }());
 </script>
 </body>

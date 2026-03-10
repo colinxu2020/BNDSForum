@@ -19,6 +19,7 @@ from flask_login import current_user, login_required
 from werkzeug.utils import secure_filename
 
 from .datastore import DataStore
+from .security import path_is_within
 
 bp = Blueprint("uploads", __name__, url_prefix="/uploads")
 logger = logging.getLogger(__name__)
@@ -225,7 +226,9 @@ def api_upload():
             storage_url = _upload_local(current_user.username, file_data, safe_name)
     except Exception as exc:
         logger.exception("图片上传失败")
-        return jsonify({"success": False, "message": f"上传失败: {exc}"}), 500
+        if isinstance(exc, RuntimeError):
+            return jsonify({"success": False, "message": "上传服务暂时不可用，请稍后再试或联系管理员"}), 503
+        return jsonify({"success": False, "message": "上传失败，请稍后重试"}), 500
 
     record = datastore.add_upload(
         username=current_user.username,
@@ -283,7 +286,7 @@ def serve_image(username: str, filename: str):
         abort(404)
     # Prevent path traversal
     target = (directory / safe_file).resolve()
-    if not str(target).startswith(str(directory.resolve())):
+    if not path_is_within(directory, target):
         abort(403)
     ext = safe_file.rsplit(".", 1)[-1].lower() if "." in safe_file else ""
     # Force download (attachment) for any type that could execute inline in browser

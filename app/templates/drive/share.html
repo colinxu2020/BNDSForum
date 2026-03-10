@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}文件分享 - BNDS Blog{% endblock %}
+{% block extra_head %}
+{{ super() }}
+<style>
+.share-page { max-width: 760px; margin: 0 auto; }
+.share-meta { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:1rem; margin:1.25rem 0; }
+.share-meta-card { padding:1rem; border:1px solid var(--border-color); border-radius:var(--radius-md); background:rgba(79,70,229,.04); }
+.share-meta-label { font-size:.82rem; color:var(--text-muted); margin-bottom:.3rem; }
+.share-meta-value { font-weight:600; word-break:break-word; }
+.share-download-form { margin-top:1.25rem; display:flex; flex-direction:column; gap:1rem; }
+.share-input { width:100%; box-sizing:border-box; padding:.8rem .95rem; border:1px solid var(--border-color); border-radius:var(--radius-sm); background:var(--surface-color); color:var(--text-color); }
+.share-tip { font-size:.9rem; color:var(--text-muted); }
+.share-badge { display:inline-flex; align-items:center; gap:.35rem; padding:.35rem .7rem; border-radius:999px; background:rgba(79,70,229,.12); color:var(--primary); font-size:.82rem; font-weight:600; }
+.share-badge.warn { background:rgba(245,158,11,.14); color:#b45309; }
+.share-badge.danger { background:rgba(239,68,68,.14); color:var(--danger); }
+.share-layout { display:grid; grid-template-columns:minmax(0,1fr) 220px; gap:1.25rem; align-items:start; }
+.share-qr-card { border:1px solid var(--border-color); border-radius:var(--radius-md); padding:1rem; text-align:center; background:rgba(79,70,229,.04); }
+.share-qr-card img { width:100%; max-width:180px; height:auto; display:block; margin:0 auto .75rem; }
+:root[data-theme="dark"] .share-qr-card img { filter:invert(1) brightness(1.15); background:rgba(11,18,32,.98); border-radius:16px; padding:.45rem; }
+@media (max-width: 780px) { .share-layout { grid-template-columns:1fr; } }
+</style>
+{% endblock %}
+{% block content %}
+<section class="card share-page">
+    {% if expired %}
+        <h1 style="margin-top:0">分享已失效</h1>
+        <p class="share-tip">该文件分享链接已过期，无法继续下载。</p>
+    {% elif exhausted %}
+        <h1 style="margin-top:0">分享已失效</h1>
+        <p class="share-tip">该文件分享链接的下载次数已用完，无法继续下载。</p>
+    {% else %}
+        <div class="share-layout">
+            <div>
+                <div style="display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;align-items:flex-start;">
+                    <div>
+                        <h1 style="margin:0 0 .5rem">文件分享</h1>
+                        <p class="share-tip" style="margin:0">你正在访问一个云盘分享链接。</p>
+                    </div>
+                    <div style="display:flex;gap:.5rem;flex-wrap:wrap;justify-content:flex-end;">
+                        {% if needs_code %}
+                            <span class="share-badge warn">需要邀请码</span>
+                        {% else %}
+                            <span class="share-badge">无需邀请码</span>
+                        {% endif %}
+                        {% if require_login %}
+                            <span class="share-badge warn">仅登录用户可下载</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="share-meta">
+                    <div class="share-meta-card">
+                        <div class="share-meta-label">文件名</div>
+                        <div class="share-meta-value">{{ file.original_name }}</div>
+                    </div>
+                    <div class="share-meta-card">
+                        <div class="share-meta-label">文件大小</div>
+                        <div class="share-meta-value">{{ format_size(file.file_size) }}</div>
+                    </div>
+                    <div class="share-meta-card">
+                        <div class="share-meta-label">分享者</div>
+                        <div class="share-meta-value">{{ share.owner_username }}</div>
+                    </div>
+                    <div class="share-meta-card">
+                        <div class="share-meta-label">有效期</div>
+                        <div class="share-meta-value">{{ share.expires_at.replace('T', ' ')[:16] if share.expires_at else '永久有效' }}</div>
+                    </div>
+                    <div class="share-meta-card">
+                        <div class="share-meta-label">下载次数</div>
+                        <div class="share-meta-value">{{ share.download_count }} / {{ share.max_downloads if share.max_downloads else '∞' }}</div>
+                    </div>
+                    <div class="share-meta-card">
+                        <div class="share-meta-label">下载权限</div>
+                        <div class="share-meta-value">{{ '仅登录用户' if require_login else '公开下载' }}</div>
+                    </div>
+                </div>
+
+                {% if require_login and not current_user.is_authenticated %}
+                    <div class="share-meta-card" style="background:rgba(245,158,11,.08)">
+                        <div class="share-meta-label">下载提示</div>
+                        <div class="share-meta-value">此分享仅允许已登录用户下载，请先登录。</div>
+                    </div>
+                    <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-top:1rem;">
+                        <a href="{{ url_for('auth.login', next=url_for('drive.share_page', token=token)) }}" class="button primary">登录后下载</a>
+                        <a href="{{ url_for('blog.index') }}" class="button">返回首页</a>
+                    </div>
+                {% else %}
+                    <form method="post" action="{{ url_for('drive.share_download', token=token) }}" class="share-download-form">
+                        <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                        {% if needs_code %}
+                            <div>
+                                <label for="invite_code" style="display:block;font-weight:600;margin-bottom:.45rem">请输入邀请码</label>
+                                <input id="invite_code" name="invite_code" type="text" class="input share-input" maxlength="32" placeholder="输入分享者提供的邀请码" required>
+                                <p class="share-tip" style="margin:.45rem 0 0">下载前需要先验证邀请码。</p>
+                            </div>
+                        {% else %}
+                            <p class="share-tip" style="margin:0">该文件可直接下载。</p>
+                        {% endif %}
+                        <div style="display:flex;gap:.75rem;flex-wrap:wrap;">
+                            <button type="submit" class="button primary">下载文件</button>
+                            <a href="{{ url_for('blog.index') }}" class="button">返回首页</a>
+                        </div>
+                    </form>
+                {% endif %}
+            </div>
+
+            <aside class="share-qr-card">
+                <img src="{{ qr_url }}" alt="分享二维码">
+                <div class="share-tip">扫码打开当前分享链接</div>
+            </aside>
+        </div>
+    {% endif %}
+</section>
+{% endblock %}

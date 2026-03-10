@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import logging
 import threading
-from urllib.parse import urlparse
 
 from flask import Blueprint, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 
 from .datastore import DataStore, utcnow_str
+from .security import safe_redirect_target
 
 
 bp = Blueprint("auth", __name__, url_prefix="/auth")
@@ -103,14 +103,8 @@ def login():
                 except Exception:
                     current_app.logger.exception("发送登录系统通知失败：%s", username)
                 flash("登录成功", "success")
-                next_url = request.args.get("next")
-                if next_url:
-                    parsed = urlparse(next_url)
-                    if parsed.scheme and parsed.scheme not in {"http", "https"}:
-                        next_url = None
-                    elif parsed.netloc and parsed.netloc != request.host:
-                        next_url = None
-                return redirect(next_url or url_for("blog.index"))
+                next_url = safe_redirect_target(request.args.get("next"), url_for("blog.index"))
+                return redirect(next_url)
             else:
                 flash("登录失败，请联系管理员", "error")
         resolved_username = username or resolved_username

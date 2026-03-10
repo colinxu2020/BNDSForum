@@ -30,16 +30,39 @@
 .ctx-menu-item.danger { color:var(--danger); }
 .ctx-menu-item.danger:hover { background:rgba(239,68,68,.08); }
 .ctx-sep { height:1px; background:var(--border-color); margin:4px 0; }
+.share-modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:10000; display:flex; align-items:center; justify-content:center; padding:1rem; }
+.share-modal { background:var(--surface-color); border:1px solid var(--border-color); border-radius:var(--radius-md); padding:1.5rem; max-width:480px; width:100%; box-shadow:0 16px 48px rgba(0,0,0,.25); }
+.share-modal h3 { margin:0 0 1rem; font-size:1.1rem; }
+.share-result-box { background:rgba(79,70,229,.06); border:1px solid var(--border-color); border-radius:var(--radius-sm); padding:.75rem; word-break:break-all; font-size:.85rem; margin:.5rem 0; }
+.share-table { width:100%; border-collapse:collapse; font-size:.85rem; margin-top:.75rem; }
+.share-table th,.share-table td { text-align:left; padding:.45rem .65rem; border-bottom:1px solid var(--border-color); vertical-align:middle; }
+.share-table th { font-weight:600; color:var(--text-muted); }
+.share-grid { display:grid; grid-template-columns:1fr 150px; gap:1rem; align-items:start; }
+.share-qr-box { text-align:center; border:1px solid var(--border-color); border-radius:var(--radius-sm); padding:.75rem; background:rgba(79,70,229,.04); }
+.share-qr-box img { width:100%; max-width:130px; height:auto; display:block; margin:0 auto .5rem; }
+.share-form-grid { display:grid; gap:.9rem; }
+.share-form-grid .input-label { margin-bottom:.35rem; }
+.share-form-card { border:1px solid var(--border-color); border-radius:var(--radius-md); padding:1rem; background:rgba(79,70,229,.03); }
+.share-table-qr { width:60px; height:60px; border-radius:12px; padding:.35rem; background:rgba(255,255,255,.96); border:1px solid var(--border-color); }
+.share-option { display:flex; align-items:center; gap:.5rem; font-size:.88rem; margin:.5rem 0; }
+.share-log-list { max-height:220px; overflow:auto; border:1px solid var(--border-color); border-radius:var(--radius-sm); margin-top:.75rem; }
+.share-log-item { padding:.65rem .8rem; border-bottom:1px solid var(--border-color); font-size:.83rem; }
+.share-log-item:last-child { border-bottom:none; }
+.share-status-chip { display:inline-flex; align-items:center; padding:.2rem .5rem; border-radius:999px; font-size:.78rem; background:rgba(79,70,229,.10); color:var(--primary); }
+.share-status-chip.warn { background:rgba(245,158,11,.12); color:#b45309; }
+.share-status-chip.danger { background:rgba(239,68,68,.12); color:var(--danger); }
+.share-action-row { display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; }
 /* Upload modal */
 .drive-upload-zone { border:2px dashed var(--border-color); border-radius:var(--radius-md); padding:1.5rem; text-align:center; cursor:pointer; transition:border-color .2s; margin-bottom:1rem; }
 .drive-upload-zone:hover,.drive-upload-zone.drag-over { border-color:var(--primary); background:rgba(79,70,229,.04); }
 .drive-upload-zone input { display:none; }
-@media (prefers-color-scheme:dark) {
- .file-table th { background:rgba(99,102,241,.08); }
- .file-table tr:hover { background:rgba(99,102,241,.06); }
- .ctx-menu { background:rgba(16,22,38,.98); border-color:rgba(148,163,184,.18); box-shadow:0 8px 24px rgba(0,0,0,.5); }
- .ctx-menu-item:hover { background:rgba(99,102,241,.15); }
-}
+:root[data-theme="dark"] .file-table th { background:rgba(99,102,241,.08); }
+:root[data-theme="dark"] .file-table tr:hover { background:rgba(99,102,241,.06); }
+:root[data-theme="dark"] .ctx-menu { background:rgba(16,22,38,.98); border-color:rgba(148,163,184,.18); box-shadow:0 8px 24px rgba(0,0,0,.5); }
+:root[data-theme="dark"] .ctx-menu-item:hover { background:rgba(99,102,241,.15); }
+:root[data-theme="dark"] .share-table-qr,
+:root[data-theme="dark"] .share-create-qr,
+:root[data-theme="dark"] .share-manage-qr { filter:invert(1) brightness(1.15); background:rgba(11,18,32,.98); }
 </style>
 {% endblock %}
 {% block content %}
@@ -63,6 +86,7 @@
     <div class="drive-toolbar">
         <button class="button primary small" onclick="document.getElementById('driveFileInput').click()">上传文件</button>
         <button class="button small" onclick="promptNewFolder()">新建文件夹</button>
+        <a class="button ghost small" href="{{ url_for('drive.shares') }}">分享中心</a>
         <input type="file" id="driveFileInput" multiple style="display:none">
     </div>
 
@@ -105,14 +129,70 @@
     <div class="ctx-menu-item" data-action="open">打开</div>
     <div class="ctx-menu-item" data-action="rename">重命名</div>
     <div class="ctx-menu-item" data-action="download">下载</div>
+    <div class="ctx-menu-item file-only" data-action="share">🔗 分享文件</div>
+    <div class="ctx-menu-item file-only" data-action="manage-shares">📎 管理分享</div>
     <div class="ctx-sep"></div>
     <div class="ctx-menu-item danger" data-action="delete">删除</div>
+</div>
+
+<!-- Share-create modal -->
+<div class="share-modal-overlay" id="shareCreateOverlay" style="display:none">
+    <div class="share-modal" style="max-width:640px">
+    <h3>🔗 分享文件</h3>
+    <p style="font-size:.88rem;color:var(--text-muted);margin:.3rem 0 1rem" id="shareFileName"></p>
+        <div class="share-grid">
+            <div class="share-form-card share-form-grid">
+                <div>
+                    <label class="input-label" for="shareInviteCode">邀请码（可空）</label>
+                    <input id="shareInviteCode" type="text" maxlength="32" class="input" placeholder="留空则无需邀请码">
+                </div>
+                <div>
+                    <label class="input-label" for="shareExpiresAt">过期时间（可空）</label>
+                    <input id="shareExpiresAt" type="datetime-local" class="input">
+                </div>
+                <div>
+                    <label class="input-label" for="shareMaxDownloads">最大下载次数（可空）</label>
+                    <input id="shareMaxDownloads" type="number" min="1" max="100000" class="input" placeholder="留空则不限制">
+                </div>
+                <label class="share-option"><input id="shareRequireLogin" type="checkbox"> 仅允许已登录用户下载</label>
+            </div>
+            <div class="share-qr-box">
+                <img id="shareResultQr" class="share-create-qr" src="" alt="分享二维码" style="display:none">
+                <div id="shareQrPlaceholder" style="font-size:.82rem;color:var(--text-muted);line-height:1.6">生成分享链接后可在这里查看二维码</div>
+            </div>
+        </div>
+    <div id="shareResultBox" style="display:none">
+      <p style="font-size:.85rem;font-weight:600;margin:.5rem 0 .25rem">分享链接：</p>
+      <div class="share-result-box" id="shareResultUrl"></div>
+      <p style="font-size:.85rem;font-weight:600;margin:.5rem 0 .25rem" id="shareResultCodeLabel"></p>
+      <div class="share-result-box" id="shareResultCode" style="display:none"></div>
+      <button class="button small" onclick="copyShareUrl()">📋 复制链接</button>
+    </div>
+    <div style="display:flex;gap:.5rem;margin-top:1rem">
+      <button class="button primary small" id="shareCreateBtn" onclick="doCreateShare()">生成分享链接</button>
+      <button class="button small" onclick="closeShareCreate()">关闭</button>
+    </div>
+  </div>
+</div>
+
+<!-- Manage-shares modal -->
+<div class="share-modal-overlay" id="manageSharesOverlay" style="display:none">
+    <div class="share-modal" style="max-width:900px">
+    <h3>📎 管理分享链接</h3>
+    <p style="font-size:.88rem;color:var(--text-muted);margin:.3rem 0 .8rem" id="manageShareFileName"></p>
+    <div id="manageSharesList"><p style="color:var(--text-muted);font-size:.88rem">加载中…</p></div>
+        <div id="manageShareLogs" style="margin-top:1rem"></div>
+        <div style="margin-top:1rem;display:flex;justify-content:space-between;gap:.75rem;flex-wrap:wrap;align-items:center;">
+            <a class="button ghost small" href="{{ url_for('drive.shares') }}">前往分享中心</a>
+      <button class="button small" onclick="closeManageShares()">关闭</button>
+    </div>
+  </div>
 </div>
 
 <script>
 (function(){
     var csrf = '{{ csrf_token() }}';
-    var parentId = {{ ('"' + parent_id + '"') if parent_id else 'null' }};
+    var parentId = {{ parent_id|tojson }};
     var ctxMenu = document.getElementById('ctxMenu');
     var currentRow = null;
 
@@ -158,10 +238,209 @@
         });
     };
 
+    var shareCreateOverlay = document.getElementById('shareCreateOverlay');
+    var manageSharesOverlay = document.getElementById('manageSharesOverlay');
+    var activeShareFileId = null;
+
+    window.openShareCreate = function(fileId, fileName){
+        activeShareFileId = fileId;
+        document.getElementById('shareFileName').textContent = '当前文件：' + fileName;
+        document.getElementById('shareInviteCode').value = '';
+        document.getElementById('shareExpiresAt').value = '';
+        document.getElementById('shareMaxDownloads').value = '';
+        document.getElementById('shareRequireLogin').checked = false;
+        document.getElementById('shareResultBox').style.display = 'none';
+        document.getElementById('shareResultUrl').textContent = '';
+        document.getElementById('shareResultCode').textContent = '';
+        document.getElementById('shareResultCode').style.display = 'none';
+        document.getElementById('shareResultCodeLabel').textContent = '';
+        document.getElementById('shareResultQr').style.display = 'none';
+        document.getElementById('shareResultQr').src = '';
+        document.getElementById('shareQrPlaceholder').style.display = 'block';
+        shareCreateOverlay.style.display = 'flex';
+    };
+
+    window.closeShareCreate = function(){
+        shareCreateOverlay.style.display = 'none';
+        activeShareFileId = null;
+    };
+
+    window.copyShareUrl = function(){
+        var url = document.getElementById('shareResultUrl').textContent;
+        if(!url) return;
+        navigator.clipboard.writeText(url).then(function(){
+            alert('分享链接已复制');
+        }).catch(function(){
+            alert('复制失败，请手动复制');
+        });
+    };
+
+    window.doCreateShare = function(){
+        if(!activeShareFileId) return;
+        var inviteCode = document.getElementById('shareInviteCode').value.trim();
+        var expiresAt = document.getElementById('shareExpiresAt').value.trim();
+        var maxDownloads = document.getElementById('shareMaxDownloads').value.trim();
+        var requireLogin = document.getElementById('shareRequireLogin').checked;
+        var fd = new FormData();
+        fd.append('file_id', activeShareFileId);
+        fd.append('_csrf_token', csrf);
+        if(inviteCode) fd.append('invite_code', inviteCode);
+        if(expiresAt) fd.append('expires_at', expiresAt);
+        if(maxDownloads) fd.append('max_downloads', maxDownloads);
+        if(requireLogin) fd.append('require_login', '1');
+        fetch('{{ url_for("drive.api_create_share") }}', {method:'POST', headers:{'X-CSRFToken':csrf}, body:fd})
+        .then(function(r){return r.json();})
+        .then(function(d){
+            if(!d.success){
+                alert(d.message || '生成分享链接失败');
+                return;
+            }
+            document.getElementById('shareResultBox').style.display = 'block';
+            document.getElementById('shareResultUrl').textContent = d.share_url;
+            if(d.qr_url){
+                document.getElementById('shareResultQr').src = d.qr_url;
+                document.getElementById('shareResultQr').style.display = 'block';
+                document.getElementById('shareQrPlaceholder').style.display = 'none';
+            }
+            if(d.invite_code){
+                document.getElementById('shareResultCodeLabel').textContent = '邀请码：';
+                document.getElementById('shareResultCode').textContent = d.invite_code;
+                document.getElementById('shareResultCode').style.display = 'block';
+            } else {
+                document.getElementById('shareResultCodeLabel').textContent = '此分享未设置邀请码';
+                document.getElementById('shareResultCode').style.display = 'none';
+            }
+        })
+        .catch(function(){
+            alert('生成分享链接失败，请稍后重试');
+        });
+    };
+
+    window.openManageShares = function(fileId, fileName){
+        activeShareFileId = fileId;
+        document.getElementById('manageShareFileName').textContent = '当前文件：' + fileName;
+        document.getElementById('manageSharesList').innerHTML = '<p style="color:var(--text-muted);font-size:.88rem">加载中…</p>';
+        document.getElementById('manageShareLogs').innerHTML = '';
+        manageSharesOverlay.style.display = 'flex';
+        fetch('{{ url_for("drive.api_list_shares", file_id="__ID__") }}'.replace('__ID__', fileId))
+        .then(function(r){return r.json();})
+        .then(function(d){
+            if(!d.success){
+                document.getElementById('manageSharesList').innerHTML = '<p style="color:var(--danger);font-size:.88rem">' + (d.message || '加载失败') + '</p>';
+                return;
+            }
+            renderShareList(d.data || []);
+        })
+        .catch(function(){
+            document.getElementById('manageSharesList').innerHTML = '<p style="color:var(--danger);font-size:.88rem">加载失败，请稍后重试</p>';
+        });
+    };
+
+    window.closeManageShares = function(){
+        manageSharesOverlay.style.display = 'none';
+    };
+
+    function renderShareList(items){
+        if(!items.length){
+            document.getElementById('manageSharesList').innerHTML = '<p style="color:var(--text-muted);font-size:.88rem">暂无分享链接</p>';
+            return;
+        }
+        var html = '<div class="responsive-table"><table class="share-table"><thead><tr><th>链接</th><th>二维码</th><th>邀请码</th><th>有效期</th><th>下载</th><th>登录限制</th><th>操作</th></tr></thead><tbody>';
+        items.forEach(function(item){
+            var limitText = item.max_downloads ? ((item.download_count || 0) + '/' + item.max_downloads) : ((item.download_count || 0) + '/∞');
+            html += '<tr>' +
+                '<td><div style="max-width:220px;word-break:break-all">' + escapeHtml(item.share_url) + '</div></td>' +
+            '<td>' + (item.qr_url ? '<a href="' + escapeHtml(item.share_url) + '" target="_blank" rel="noreferrer"><img class="share-table-qr share-manage-qr" src="' + escapeHtml(item.qr_url) + '" alt="二维码"></a>' : '—') + '</td>' +
+                '<td>' + (item.invite_code ? escapeHtml(item.invite_code) : '—') + '</td>' +
+                '<td>' + (item.expires_at ? escapeHtml(item.expires_at.replace('T', ' ').slice(0, 16)) : '永久') + '</td>' +
+                '<td>' + escapeHtml(limitText) + '</td>' +
+                '<td>' + (item.require_login ? '<span class="share-status-chip warn">仅登录</span>' : '<span class="share-status-chip">公开</span>') + '</td>' +
+            '<td><div class="share-action-row"><button class="button small" onclick="copyManagedShare(\'' + item.share_url.replace(/'/g, '\\&#39;') + '\')">复制</button><button class="button small" onclick="viewShareLogs(\'' + item.id + '\')">日志</button><button class="button small" onclick="revokeShare(\'' + item.id + '\')">撤销</button></div></td>' +
+                '</tr>';
+        });
+        html += '</tbody></table></div>';
+        document.getElementById('manageSharesList').innerHTML = html;
+    }
+
+    window.viewShareLogs = function(shareId){
+        document.getElementById('manageShareLogs').innerHTML = '<p style="color:var(--text-muted);font-size:.88rem">正在加载访问日志…</p>';
+        fetch('{{ url_for("drive.api_share_logs", share_id="__ID__") }}'.replace('__ID__', shareId))
+        .then(function(r){ return r.json(); })
+        .then(function(d){
+            if(!d.success){
+                document.getElementById('manageShareLogs').innerHTML = '<p style="color:var(--danger);font-size:.88rem">日志加载失败</p>';
+                return;
+            }
+            renderShareLogs(d.data || []);
+        })
+        .catch(function(){
+            document.getElementById('manageShareLogs').innerHTML = '<p style="color:var(--danger);font-size:.88rem">日志加载失败</p>';
+        });
+    };
+
+    function renderShareLogs(items){
+        if(!items.length){
+            document.getElementById('manageShareLogs').innerHTML = '<h4 style="margin:.5rem 0">访问日志</h4><p style="color:var(--text-muted);font-size:.88rem">暂无访问记录</p>';
+            return;
+        }
+        var html = '<h4 style="margin:.5rem 0">访问日志</h4><div class="share-log-list">';
+        items.forEach(function(item){
+            var statusClass = item.access_status === 'success' ? 'share-status-chip' : (item.access_status === 'expired' || item.access_status === 'limit_reached' || item.access_status === 'invite_invalid' ? 'share-status-chip danger' : 'share-status-chip warn');
+            html += '<div class="share-log-item">' +
+                '<div style="display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap">' +
+                '<strong>' + escapeHtml(item.access_type) + '</strong>' +
+                '<span class="' + statusClass + '">' + escapeHtml(item.access_status) + '</span>' +
+                '</div>' +
+                '<div style="margin-top:.35rem;color:var(--text-muted)">时间：' + escapeHtml((item.created_at || '').replace('T', ' ').slice(0, 19)) + '；用户：' + escapeHtml(item.username || '匿名') + '；IP：' + escapeHtml(item.ip_address || '未知') + '</div>' +
+                '</div>';
+        });
+        html += '</div>';
+        document.getElementById('manageShareLogs').innerHTML = html;
+    }
+
+    window.copyManagedShare = function(url){
+        navigator.clipboard.writeText(url).then(function(){
+            alert('分享链接已复制');
+        }).catch(function(){
+            alert('复制失败，请手动复制');
+        });
+    };
+
+    window.revokeShare = function(shareId){
+        if(!confirm('确定撤销这个分享链接吗？')) return;
+        var fd = new FormData();
+        fd.append('share_id', shareId);
+        fd.append('_csrf_token', csrf);
+        fetch('{{ url_for("drive.api_delete_share") }}', {method:'POST', headers:{'X-CSRFToken':csrf}, body:fd})
+        .then(function(r){return r.json();})
+        .then(function(d){
+            if(!d.success){
+                alert(d.message || '撤销失败');
+                return;
+            }
+            if(activeShareFileId) openManageShares(activeShareFileId, document.getElementById('manageShareFileName').textContent.replace('当前文件：', ''));
+        })
+        .catch(function(){
+            alert('撤销失败，请稍后重试');
+        });
+    };
+
+    function escapeHtml(text){
+        return String(text)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
     // Context menu
     window.showCtx = function(e, row){
         e.preventDefault();
         currentRow = row;
+        var isFolder = row.dataset.folder==='True'||row.dataset.folder==='1';
+        // Show/hide file-only items
+        ctxMenu.querySelectorAll('.file-only').forEach(function(el){ el.style.display = isFolder ? 'none' : ''; });
         ctxMenu.style.left = e.clientX+'px';
         ctxMenu.style.top = e.clientY+'px';
         ctxMenu.classList.add('visible');
@@ -195,6 +474,10 @@
             });
         } else if(action==='download'){
             if(!isFolder) location.href='{{ url_for("drive.download", file_id="__ID__") }}'.replace('__ID__',id);
+        } else if(action==='share'){
+            openShareCreate(id, name);
+        } else if(action==='manage-shares'){
+            openManageShares(id, name);
         } else if(action==='delete'){
             if(!confirm('确定要删除 "'+name+'" 吗？')) return;
             var fd=new FormData();

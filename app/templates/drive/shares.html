@@ -1,0 +1,404 @@
+{% extends "base.html" %}
+{% block title %}分享中心 - BNDS Blog{% endblock %}
+{% block extra_head %}
+{{ super() }}
+<style>
+.share-center-hero { display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; flex-wrap:wrap; }
+.share-center-hero p { margin:.45rem 0 0; color:var(--text-muted); max-width:720px; }
+.share-center-actions { display:flex; gap:.75rem; flex-wrap:wrap; }
+.share-stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:1rem; margin-top:1.2rem; }
+.share-stat-card { border:1px solid var(--border-color); border-radius:var(--radius-md); padding:1rem 1.1rem; background:rgba(79,70,229,.04); }
+.share-stat-card strong { display:block; font-size:1.6rem; margin-top:.35rem; }
+.share-filter-bar { display:grid; grid-template-columns:minmax(0,1.3fr) 220px; gap:1rem; margin-top:1.2rem; }
+.share-table { width:100%; border-collapse:collapse; }
+.share-table th,.share-table td { padding:.85rem .9rem; border-bottom:1px solid var(--border-color); text-align:left; vertical-align:top; }
+.share-table th { color:var(--text-muted); font-size:.86rem; background:rgba(79,70,229,.04); }
+.share-table tr:hover { background:rgba(79,70,229,.03); }
+.share-file-name { font-weight:700; margin-bottom:.35rem; }
+.share-file-meta { color:var(--text-muted); font-size:.86rem; }
+.share-link-box { max-width:260px; word-break:break-all; font-size:.85rem; }
+.share-chip { display:inline-flex; align-items:center; gap:.35rem; padding:.28rem .62rem; border-radius:999px; background:rgba(79,70,229,.1); color:var(--primary); font-size:.78rem; font-weight:700; }
+.share-chip.warn { background:rgba(245,158,11,.14); color:#b45309; }
+.share-chip.danger { background:rgba(239,68,68,.14); color:var(--danger); }
+.share-chip.success { background:rgba(34,197,94,.14); color:#15803d; }
+.share-actions { display:flex; gap:.5rem; flex-wrap:wrap; }
+.share-table-empty { text-align:center; padding:3rem 1rem; color:var(--text-muted); border:1px dashed var(--border-color); border-radius:var(--radius-md); }
+.share-row-qr { width:74px; height:74px; border-radius:12px; padding:.45rem; border:1px solid var(--border-color); background:rgba(255,255,255,.96); display:block; }
+:root[data-theme="dark"] .share-row-qr,
+:root[data-theme="dark"] .share-page-qr,
+:root[data-theme="dark"] .share-create-qr,
+:root[data-theme="dark"] .share-manage-qr { filter:invert(1) brightness(1.15); background:rgba(11,18,32,.98); }
+.share-grid-two { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(280px,1fr); gap:1rem; align-items:start; }
+.share-side-card { position:sticky; top:88px; }
+.share-log-list { max-height:520px; overflow:auto; border:1px solid var(--border-color); border-radius:var(--radius-md); }
+.share-log-item { padding:.8rem .9rem; border-bottom:1px solid var(--border-color); }
+.share-log-item:last-child { border-bottom:none; }
+.share-log-meta { margin-top:.35rem; color:var(--text-muted); font-size:.84rem; line-height:1.7; }
+.share-modal-overlay { position:fixed; inset:0; display:none; align-items:center; justify-content:center; background:rgba(2,6,23,.62); padding:1rem; z-index:11000; }
+.share-modal-overlay.visible { display:flex; }
+.share-modal { width:min(720px, 100%); background:var(--surface-color); border:1px solid var(--border-color); border-radius:var(--radius-lg); box-shadow:0 24px 60px rgba(0,0,0,.28); padding:1.4rem; }
+.share-modal-grid { display:grid; grid-template-columns:minmax(0,1fr) 170px; gap:1rem; align-items:start; }
+.share-modal-grid .share-row-qr { width:100%; height:auto; }
+.share-modal-header { display:flex; justify-content:space-between; align-items:flex-start; gap:1rem; margin-bottom:1rem; }
+.share-modal-header h3 { margin:0; }
+.share-form-grid { display:grid; gap:1rem; }
+.share-form-grid .share-option { display:flex; align-items:center; gap:.6rem; color:var(--text-muted); }
+.share-help { color:var(--text-muted); font-size:.86rem; margin-top:.4rem; line-height:1.7; }
+.share-modal-footer { display:flex; justify-content:flex-end; gap:.75rem; flex-wrap:wrap; margin-top:1.2rem; }
+@media (max-width: 980px) { .share-grid-two { grid-template-columns:1fr; } .share-side-card { position:static; } }
+@media (max-width: 760px) { .share-filter-bar,.share-modal-grid { grid-template-columns:1fr; } .share-center-hero { align-items:stretch; } }
+</style>
+{% endblock %}
+{% block content %}
+<section class="card">
+    <div class="share-center-hero">
+        <div>
+            <h1 style="margin:0;">分享中心</h1>
+            <p>在一个页面里统一查看、编辑、撤销你的全部云盘分享，并可随时检查访问日志与下载限制。</p>
+        </div>
+        <div class="share-center-actions">
+            <a href="{{ url_for('drive.index') }}" class="button ghost">返回云盘</a>
+            <a href="{{ url_for('blog.user_profile', username=current_user.username, _anchor='appearance-settings') }}" class="button">外观设置</a>
+        </div>
+    </div>
+
+    <div class="share-stats">
+        <div class="share-stat-card"><span class="share-file-meta">全部分享</span><strong id="statTotal">{{ stats.total }}</strong></div>
+        <div class="share-stat-card"><span class="share-file-meta">生效中</span><strong id="statActive">{{ stats.active }}</strong></div>
+        <div class="share-stat-card"><span class="share-file-meta">已过期</span><strong id="statExpired">{{ stats.expired }}</strong></div>
+        <div class="share-stat-card"><span class="share-file-meta">总下载</span><strong id="statDownloads">{{ stats.downloads }}</strong></div>
+    </div>
+
+    <div class="share-filter-bar">
+        <input id="shareCenterSearch" class="input" type="search" placeholder="按文件名、邀请码或链接搜索分享">
+        <select id="shareCenterStatus" class="select">
+            <option value="all">全部状态</option>
+            <option value="active">仅生效中</option>
+            <option value="expired">仅已过期</option>
+            <option value="limit_reached">仅次数耗尽</option>
+        </select>
+    </div>
+</section>
+
+<section class="share-grid-two">
+    <div class="card">
+        <div id="shareCenterTable"></div>
+    </div>
+
+    <aside class="card share-side-card">
+        <div style="display:flex;justify-content:space-between;gap:1rem;align-items:flex-start;">
+            <div>
+                <h2 style="margin:0 0 .4rem;">访问日志</h2>
+                <p class="share-file-meta" id="shareLogHint">点击任意分享的“日志”按钮后，在这里查看最近访问记录。</p>
+            </div>
+        </div>
+        <div id="shareLogList"></div>
+    </aside>
+</section>
+
+<div class="share-modal-overlay" id="shareEditOverlay">
+    <div class="share-modal">
+        <div class="share-modal-header">
+            <div>
+                <h3>编辑分享</h3>
+                <p class="share-file-meta" id="shareEditFileName" style="margin:.4rem 0 0;"></p>
+            </div>
+            <button type="button" class="button ghost small" onclick="closeShareEdit()">关闭</button>
+        </div>
+        <div class="share-modal-grid">
+            <form id="shareEditForm" class="share-form-grid" onsubmit="submitShareEdit(event)">
+                <input type="hidden" id="shareEditId">
+                <div>
+                    <label class="input-label" for="shareEditInviteCode">邀请码</label>
+                    <input id="shareEditInviteCode" class="input" type="text" maxlength="32" placeholder="留空则无需邀请码">
+                </div>
+                <div>
+                    <label class="input-label" for="shareEditExpiresAt">过期时间</label>
+                    <input id="shareEditExpiresAt" class="input" type="datetime-local">
+                    <div class="share-help">留空表示永久有效。修改后会立即影响当前分享链接。</div>
+                </div>
+                <div>
+                    <label class="input-label" for="shareEditMaxDownloads">最大下载次数</label>
+                    <input id="shareEditMaxDownloads" class="input" type="number" min="1" max="100000" placeholder="留空则不限制">
+                </div>
+                <label class="share-option"><input id="shareEditRequireLogin" type="checkbox"> 仅允许已登录用户下载</label>
+                <div class="share-modal-footer">
+                    <button type="button" class="button ghost" onclick="closeShareEdit()">取消</button>
+                    <button type="submit" class="button primary">保存修改</button>
+                </div>
+            </form>
+            <div>
+                <img id="shareEditQr" class="share-row-qr share-manage-qr" src="" alt="分享二维码">
+                <div class="share-help" style="margin-top:.75rem;">
+                    深色模式下二维码会自动反白，保证在深色背景中也有更高对比度。
+                </div>
+                <div style="display:grid;gap:.6rem;margin-top:.9rem;">
+                    <a id="shareEditVisitLink" class="button small" href="#" target="_blank" rel="noreferrer">打开分享页</a>
+                    <button type="button" class="button small" onclick="copyEditingShareUrl()">复制链接</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block extra_scripts %}
+{{ super() }}
+<script id="share-center-data" type="application/json">{{ {"csrf": csrf_token(), "shares": shares}|tojson }}</script>
+<script>
+(function () {
+    const payload = JSON.parse(document.getElementById('share-center-data').textContent);
+    const csrf = payload.csrf;
+    const shares = payload.shares || [];
+    let activeEditShareId = null;
+    let activeLogShareId = null;
+
+    const searchInput = document.getElementById('shareCenterSearch');
+    const statusSelect = document.getElementById('shareCenterStatus');
+    const tableBox = document.getElementById('shareCenterTable');
+    const logList = document.getElementById('shareLogList');
+    const logHint = document.getElementById('shareLogHint');
+    const editOverlay = document.getElementById('shareEditOverlay');
+
+    function escapeHtml(value) {
+        return String(value == null ? '' : value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function formatDate(value) {
+        if (!value) return '永久';
+        return String(value).replace('T', ' ').slice(0, 16);
+    }
+
+    function normalizeForInput(value) {
+        if (!value) return '';
+        return String(value).slice(0, 16);
+    }
+
+    function statusChip(status) {
+        if (status === 'expired') {
+            return '<span class="share-chip danger">已过期</span>';
+        }
+        if (status === 'limit_reached') {
+            return '<span class="share-chip warn">次数耗尽</span>';
+        }
+        return '<span class="share-chip success">生效中</span>';
+    }
+
+    function getFilteredShares() {
+        const keyword = (searchInput.value || '').trim().toLowerCase();
+        const status = statusSelect.value;
+        return shares.filter(function (item) {
+            const haystack = [item.file_name, item.invite_code, item.share_url].join(' ').toLowerCase();
+            if (keyword && haystack.indexOf(keyword) === -1) {
+                return false;
+            }
+            if (status !== 'all' && item.status !== status) {
+                return false;
+            }
+            return true;
+        });
+    }
+
+    function renderTable() {
+        const items = getFilteredShares();
+        if (!items.length) {
+            tableBox.innerHTML = '<div class="share-table-empty">没有匹配的分享记录，试试更换筛选条件。</div>';
+            return;
+        }
+        let html = '<div class="responsive-table"><table class="share-table"><thead><tr><th>文件</th><th>链接 / 二维码</th><th>权限</th><th>有效期 / 下载</th><th>状态</th><th>操作</th></tr></thead><tbody>';
+        items.forEach(function (item) {
+            const limitText = item.max_downloads ? (item.download_count + '/' + item.max_downloads) : (item.download_count + '/∞');
+            html += '<tr>' +
+                '<td><div class="share-file-name">' + escapeHtml(item.file_name || '未知文件') + '</div><div class="share-file-meta">创建于 ' + escapeHtml(formatDate(item.created_at)) + '</div></td>' +
+                '<td><div style="display:flex;gap:.8rem;align-items:flex-start;flex-wrap:wrap;">' +
+                    '<img class="share-row-qr share-page-qr" src="' + escapeHtml(item.qr_url) + '" alt="分享二维码">' +
+                    '<div class="share-link-box"><div><a href="' + escapeHtml(item.share_url) + '" target="_blank" rel="noreferrer">' + escapeHtml(item.share_url) + '</a></div>' +
+                    '<div class="share-file-meta" style="margin-top:.45rem;">邀请码：' + escapeHtml(item.invite_code || '无') + '</div></div>' +
+                '</div></td>' +
+                '<td><div class="share-chip ' + (item.require_login ? 'warn' : '') + '">' + (item.require_login ? '仅登录用户' : '公开下载') + '</div></td>' +
+                '<td><div class="share-file-meta">有效期：' + escapeHtml(formatDate(item.expires_at)) + '</div><div class="share-file-meta" style="margin-top:.35rem;">下载：' + escapeHtml(limitText) + '</div></td>' +
+                '<td>' + statusChip(item.status) + '</td>' +
+                '<td><div class="share-actions">' +
+                    '<button type="button" class="button small" onclick="copyShareFromCenter(\'' + item.id + '\')">复制</button>' +
+                    '<button type="button" class="button small" onclick="openShareEdit(\'' + item.id + '\')">编辑</button>' +
+                    '<button type="button" class="button small" onclick="loadShareLogs(\'' + item.id + '\')">日志</button>' +
+                    '<button type="button" class="button danger small" onclick="revokeShareFromCenter(\'' + item.id + '\')">撤销</button>' +
+                '</div></td>' +
+            '</tr>';
+        });
+        html += '</tbody></table></div>';
+        tableBox.innerHTML = html;
+    }
+
+    function renderStats() {
+        document.getElementById('statTotal').textContent = String(shares.length);
+        document.getElementById('statActive').textContent = String(shares.filter(function (item) { return item.status === 'active'; }).length);
+        document.getElementById('statExpired').textContent = String(shares.filter(function (item) { return item.status === 'expired'; }).length);
+        document.getElementById('statDownloads').textContent = String(shares.reduce(function (sum, item) { return sum + (item.download_count || 0); }, 0));
+    }
+
+    function findShare(shareId) {
+        return shares.find(function (item) { return item.id === shareId; }) || null;
+    }
+
+    window.copyShareFromCenter = function (shareId) {
+        const item = findShare(shareId);
+        if (!item) return;
+        navigator.clipboard.writeText(item.share_url).then(function () {
+            alert('分享链接已复制');
+        }).catch(function () {
+            alert('复制失败，请手动复制');
+        });
+    };
+
+    window.openShareEdit = function (shareId) {
+        const item = findShare(shareId);
+        if (!item) return;
+        activeEditShareId = shareId;
+        document.getElementById('shareEditId').value = item.id;
+        document.getElementById('shareEditFileName').textContent = item.file_name || '未知文件';
+        document.getElementById('shareEditInviteCode').value = item.invite_code || '';
+        document.getElementById('shareEditExpiresAt').value = normalizeForInput(item.expires_at);
+        document.getElementById('shareEditMaxDownloads').value = item.max_downloads || '';
+        document.getElementById('shareEditRequireLogin').checked = !!item.require_login;
+        document.getElementById('shareEditQr').src = item.qr_url;
+        document.getElementById('shareEditVisitLink').href = item.share_url;
+        editOverlay.classList.add('visible');
+    };
+
+    window.closeShareEdit = function () {
+        editOverlay.classList.remove('visible');
+        activeEditShareId = null;
+    };
+
+    window.copyEditingShareUrl = function () {
+        if (!activeEditShareId) return;
+        window.copyShareFromCenter(activeEditShareId);
+    };
+
+    window.submitShareEdit = function (event) {
+        event.preventDefault();
+        if (!activeEditShareId) return;
+        const fd = new FormData();
+        fd.append('share_id', activeEditShareId);
+        fd.append('_csrf_token', csrf);
+        const inviteCode = document.getElementById('shareEditInviteCode').value.trim();
+        const expiresAt = document.getElementById('shareEditExpiresAt').value.trim();
+        const maxDownloads = document.getElementById('shareEditMaxDownloads').value.trim();
+        if (inviteCode) fd.append('invite_code', inviteCode);
+        if (expiresAt) fd.append('expires_at', expiresAt);
+        if (maxDownloads) fd.append('max_downloads', maxDownloads);
+        if (document.getElementById('shareEditRequireLogin').checked) fd.append('require_login', '1');
+        fetch('{{ url_for("drive.api_update_share") }}', { method: 'POST', headers: { 'X-CSRFToken': csrf }, body: fd })
+            .then(function (res) { return res.json(); })
+            .then(function (data) {
+                if (!data.success) {
+                    alert(data.message || '保存失败');
+                    return;
+                }
+                const index = shares.findIndex(function (item) { return item.id === activeEditShareId; });
+                if (index >= 0) {
+                    shares[index] = data.data;
+                }
+                renderStats();
+                renderTable();
+                closeShareEdit();
+                if (activeLogShareId === data.data.id) {
+                    loadShareLogs(activeLogShareId);
+                }
+            })
+            .catch(function () {
+                alert('保存失败，请稍后重试');
+            });
+    };
+
+    window.loadShareLogs = function (shareId) {
+        const item = findShare(shareId);
+        activeLogShareId = shareId;
+        logHint.textContent = item ? ('当前查看：' + (item.file_name || '未知文件')) : '访问日志';
+        logList.innerHTML = '<p class="share-file-meta">正在加载访问日志…</p>';
+        fetch('{{ url_for("drive.api_share_logs", share_id="__ID__") }}'.replace('__ID__', shareId))
+            .then(function (res) { return res.json(); })
+            .then(function (data) {
+                if (!data.success) {
+                    logList.innerHTML = '<p class="share-file-meta" style="color:var(--danger);">日志加载失败。</p>';
+                    return;
+                }
+                if (!(data.data || []).length) {
+                    logList.innerHTML = '<p class="share-file-meta">暂无访问记录。</p>';
+                    return;
+                }
+                let html = '<div class="share-log-list">';
+                (data.data || []).forEach(function (entry) {
+                    const badge = entry.access_status === 'success'
+                        ? '<span class="share-chip success">success</span>'
+                        : (entry.access_status === 'expired' || entry.access_status === 'limit_reached' || entry.access_status === 'invite_invalid'
+                            ? '<span class="share-chip danger">' + escapeHtml(entry.access_status) + '</span>'
+                            : '<span class="share-chip warn">' + escapeHtml(entry.access_status) + '</span>');
+                    html += '<div class="share-log-item">' +
+                        '<div style="display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap;align-items:flex-start;">' +
+                            '<strong>' + escapeHtml(entry.access_type) + '</strong>' +
+                            badge +
+                        '</div>' +
+                        '<div class="share-log-meta">时间：' + escapeHtml(String(entry.created_at || '').replace('T', ' ').slice(0, 19)) + '<br>用户：' + escapeHtml(entry.username || '匿名') + '<br>IP：' + escapeHtml(entry.ip_address || '未知') + '</div>' +
+                    '</div>';
+                });
+                html += '</div>';
+                logList.innerHTML = html;
+            })
+            .catch(function () {
+                logList.innerHTML = '<p class="share-file-meta" style="color:var(--danger);">日志加载失败，请稍后重试。</p>';
+            });
+    };
+
+    window.revokeShareFromCenter = function (shareId) {
+        const item = findShare(shareId);
+        if (!item) return;
+        if (!confirm('确定撤销“' + (item.file_name || '该文件') + '”的分享吗？')) return;
+        const fd = new FormData();
+        fd.append('share_id', shareId);
+        fd.append('_csrf_token', csrf);
+        fetch('{{ url_for("drive.api_delete_share") }}', { method: 'POST', headers: { 'X-CSRFToken': csrf }, body: fd })
+            .then(function (res) { return res.json(); })
+            .then(function (data) {
+                if (!data.success) {
+                    alert(data.message || '撤销失败');
+                    return;
+                }
+                const index = shares.findIndex(function (item) { return item.id === shareId; });
+                if (index >= 0) {
+                    shares.splice(index, 1);
+                }
+                if (activeLogShareId === shareId) {
+                    activeLogShareId = null;
+                    logHint.textContent = '点击任意分享的“日志”按钮后，在这里查看最近访问记录。';
+                    logList.innerHTML = '';
+                }
+                if (activeEditShareId === shareId) {
+                    closeShareEdit();
+                }
+                renderStats();
+                renderTable();
+            })
+            .catch(function () {
+                alert('撤销失败，请稍后重试');
+            });
+    };
+
+    searchInput.addEventListener('input', renderTable);
+    statusSelect.addEventListener('change', renderTable);
+    editOverlay.addEventListener('click', function (event) {
+        if (event.target === editOverlay) {
+            closeShareEdit();
+        }
+    });
+
+    renderStats();
+    renderTable();
+}());
+</script>
+{% endblock %}

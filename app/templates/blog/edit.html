@@ -69,31 +69,29 @@
             line-height: 1.4;
         }
 
-        @media (prefers-color-scheme: dark) {
-            .chip-option {
-                background: rgba(30, 41, 59, 0.75);
-                border-color: rgba(148, 163, 184, 0.18);
-                color: #cbd5e1;
-            }
+        :root[data-theme="dark"] .chip-option {
+            background: rgba(30, 41, 59, 0.75);
+            border-color: rgba(148, 163, 184, 0.18);
+            color: #cbd5e1;
+        }
 
-            .chip-option:hover {
-                background: rgba(51, 65, 85, 0.85);
-                border-color: rgba(129, 140, 248, 0.35);
-            }
+        :root[data-theme="dark"] .chip-option:hover {
+            background: rgba(51, 65, 85, 0.85);
+            border-color: rgba(129, 140, 248, 0.35);
+        }
 
-            .chip-option input:checked + span {
-                color: #a5b4fc;
-            }
+        :root[data-theme="dark"] .chip-option input:checked + span {
+            color: #a5b4fc;
+        }
 
-            .chip-option .pill-sheen {
-                border-color: #818cf8;
-            }
+        :root[data-theme="dark"] .chip-option .pill-sheen {
+            border-color: #818cf8;
+        }
 
-            .pill-badge {
-                background: rgba(99, 102, 241, 0.18);
-                color: #a5b4fc;
-                border-color: rgba(129, 140, 248, 0.28);
-            }
+        :root[data-theme="dark"] .pill-badge {
+            background: rgba(99, 102, 241, 0.18);
+            color: #a5b4fc;
+            border-color: rgba(129, 140, 248, 0.28);
         }
     </style>
 {% endblock %}

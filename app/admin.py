@@ -6,10 +6,11 @@ from datetime import datetime, timezone
 from io import BytesIO
 import zipfile
 
-from flask import Blueprint, current_app, flash, redirect, render_template, request, send_file, url_for
+from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
 
 from .datastore import DataStore, DEFAULT_CATEGORY_TAG, DEFAULT_CLASS_TAG
+from .security import login_redirect_target, safe_redirect_target
 
 
 bp = Blueprint("admin", __name__)
@@ -31,10 +32,14 @@ def _notify_admins(message: str) -> None:
 def check_admin():
     if request.endpoint and request.endpoint.startswith("admin."):
         if not current_user.is_authenticated:
-            return redirect(url_for("auth.login", next=request.url))
+            return redirect(login_redirect_target())
         if not current_user.is_admin:
             flash("需要管理员权限", "error")
             return redirect(url_for("blog.index"))
+
+
+def _safe_admin_return_target(value: str | None, fallback: str | None = None) -> str:
+    return safe_redirect_target(value, fallback or url_for("admin.user_list"))
 
 
 _INVALID_SEGMENT_CHARS = set('<>:"/\\|?*')
@@ -365,9 +370,7 @@ def update_user():
         f"管理员 {current_user.username} 更新用户 {username} 信息：角色={role}，真实姓名={real_name}"
     )
     fallback = url_for("admin.user_list")
-    redirect_target = fallback
-    if return_to and return_to.startswith(fallback):
-        redirect_target = return_to
+    redirect_target = _safe_admin_return_target(return_to, fallback)
     return redirect(redirect_target)
 
 
@@ -379,9 +382,7 @@ def ban_user(username: str):
     target_username = (username or "").strip()
     return_to = (request.form.get("return_to") or "").strip()
     fallback = url_for("admin.user_list")
-    redirect_target = fallback
-    if return_to and return_to.startswith(fallback):
-        redirect_target = return_to
+    redirect_target = _safe_admin_return_target(return_to, fallback)
     if not target_username:
         flash("未指定用户", "error")
         return redirect(redirect_target)
@@ -422,9 +423,7 @@ def unban_user(username: str):
     target_username = (username or "").strip()
     return_to = (request.form.get("return_to") or "").strip()
     fallback = url_for("admin.user_list")
-    redirect_target = fallback
-    if return_to and return_to.startswith(fallback):
-        redirect_target = return_to
+    redirect_target = _safe_admin_return_target(return_to, fallback)
     if not target_username:
         flash("未指定用户", "error")
         return redirect(redirect_target)

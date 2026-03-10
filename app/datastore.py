@@ -375,6 +375,47 @@ class DataStore:
                 CREATE INDEX IF NOT EXISTS idx_drive_files_user ON drive_files(username);
                 CREATE INDEX IF NOT EXISTS idx_drive_files_parent ON drive_files(parent_id);
 
+                CREATE TABLE IF NOT EXISTS drive_shares (
+                    id TEXT PRIMARY KEY,
+                    file_id TEXT NOT NULL,
+                    owner_username TEXT NOT NULL,
+                    share_token TEXT NOT NULL UNIQUE,
+                    invite_code TEXT,
+                    expires_at TEXT,
+                    max_downloads INTEGER,
+                    require_login INTEGER NOT NULL DEFAULT 0,
+                    download_count INTEGER NOT NULL DEFAULT 0,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(file_id) REFERENCES drive_files(id) ON DELETE CASCADE,
+                    FOREIGN KEY(owner_username) REFERENCES users(username) ON DELETE CASCADE
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_drive_shares_token ON drive_shares(share_token);
+                CREATE INDEX IF NOT EXISTS idx_drive_shares_file ON drive_shares(file_id);
+
+                CREATE TABLE IF NOT EXISTS drive_share_access_logs (
+                    id TEXT PRIMARY KEY,
+                    share_id TEXT NOT NULL,
+                    access_type TEXT NOT NULL,
+                    access_status TEXT NOT NULL,
+                    username TEXT,
+                    ip_address TEXT,
+                    user_agent TEXT,
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY(share_id) REFERENCES drive_shares(id) ON DELETE CASCADE,
+                    FOREIGN KEY(username) REFERENCES users(username) ON DELETE SET NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_drive_share_logs_share ON drive_share_access_logs(share_id);
+                CREATE INDEX IF NOT EXISTS idx_drive_share_logs_created ON drive_share_access_logs(created_at);
+
+                CREATE TABLE IF NOT EXISTS user_preferences (
+                    username TEXT PRIMARY KEY,
+                    theme TEXT NOT NULL DEFAULT 'light',
+                    updated_at TEXT NOT NULL,
+                    FOREIGN KEY(username) REFERENCES users(username) ON DELETE CASCADE
+                );
+
                 CREATE TABLE IF NOT EXISTS feedback (
                     id TEXT PRIMARY KEY,
                     username TEXT NOT NULL,
@@ -448,6 +489,15 @@ class DataStore:
             if "is_pinned" not in post_columns:
                 conn.execute("ALTER TABLE posts ADD COLUMN is_pinned INTEGER NOT NULL DEFAULT 0")
                 conn.execute("CREATE INDEX IF NOT EXISTS idx_posts_pinned ON posts(is_pinned)")
+
+            drive_share_columns = {
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(drive_shares)")
+            }
+            if "max_downloads" not in drive_share_columns:
+                conn.execute("ALTER TABLE drive_shares ADD COLUMN max_downloads INTEGER")
+            if "require_login" not in drive_share_columns:
+                conn.execute("ALTER TABLE drive_shares ADD COLUMN require_login INTEGER NOT NULL DEFAULT 0")
 
     def _ensure_root_node(self, conn: sqlite3.Connection) -> None:
         with conn:
@@ -707,7 +757,16 @@ class DataStore:
                     ("admin", password_hash, "admin", json.dumps([], ensure_ascii=False), ""),
                 )
                 if generated:
-                    logger.warning("初始化管理员账号已创建，用户名 admin，临时密码：%s", default_password)
+                    password_file = self.base_path / "admin_initial_password.txt"
+                    try:
+                        password_file.write_text(
+                            "管理员账号：admin\n临时密码：%s\n请尽快登录并修改部署配置。\n" % default_password,
+                            encoding="utf-8",
+                        )
+                    except OSError:
+                        logger.warning("初始化管理员账号已创建，但写入初始密码文件失败，请改用环境变量 ADMIN_DEFAULT_PASSWORD 重新部署。")
+                    else:
+                        logger.warning("初始化管理员账号已创建，临时密码已写入 %s，请妥善保存并及时删除。", password_file)
                 else:
                     logger.info("初始化管理员账号已创建，用户名 admin，使用环境变量指定密码")
 
@@ -2602,6 +2661,171 @@ class DataStore:
             path.insert(0, {"id": row["id"], "name": row["original_name"]})
             current_id = row["parent_id"]
         return path
+
+    # Drive shares -----------------------------------------------------
+
+    def create_drive_share(self, file_id: str, owner_username: str,
+                           invite_code: Optional[str] = None,
+                           expires_at: Optional[str] = None,
+                           max_downloads: Optional[int] = None,
+                           require_login: bool = False) -> Dict[str, Any]:
+        share_id = uuid.uuid4().hex
+        share_token = secrets.token_urlsafe(20)
+        timestamp = utcnow_str()
+        conn = self._conn()
+        with conn:
+            conn.execute(
+                """INSERT INTO drive_shares (id, file_id, owner_username, share_token,
+                   invite_code, expires_at, max_downloads, require_login, download_count, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)""",
+                (share_id, file_id, owner_username, share_token,
+                 invite_code or None, expires_at or None, max_downloads,
+                 1 if require_login else 0, timestamp),
+            )
+        return {
+            "id": share_id, "file_id": file_id, "owner_username": owner_username,
+            "share_token": share_token, "invite_code": invite_code,
+            "expires_at": expires_at, "max_downloads": max_downloads,
+            "require_login": require_login, "download_count": 0, "created_at": timestamp,
+        }
+
+    def get_drive_share_by_token(self, token: str) -> Optional[Dict[str, Any]]:
+        conn = self._conn()
+        row = conn.execute("SELECT * FROM drive_shares WHERE share_token = ?", (token,)).fetchone()
+        return dict(row) if row else None
+
+    def get_drive_file_shares(self, file_id: str, owner_username: str) -> List[Dict[str, Any]]:
+        conn = self._conn()
+        rows = conn.execute(
+            "SELECT * FROM drive_shares WHERE file_id = ? AND owner_username = ? ORDER BY created_at DESC",
+            (file_id, owner_username),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def list_drive_owner_shares(self, owner_username: str) -> List[Dict[str, Any]]:
+        conn = self._conn()
+        rows = conn.execute(
+            """SELECT s.*, f.original_name AS file_name, f.file_size, f.updated_at AS file_updated_at
+               FROM drive_shares AS s
+               JOIN drive_files AS f ON f.id = s.file_id
+               WHERE s.owner_username = ?
+               ORDER BY s.created_at DESC""",
+            (owner_username,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_drive_share(self, share_id: str, owner_username: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        conn = self._conn()
+        if owner_username:
+            row = conn.execute(
+                "SELECT * FROM drive_shares WHERE id = ? AND owner_username = ?",
+                (share_id, owner_username),
+            ).fetchone()
+        else:
+            row = conn.execute("SELECT * FROM drive_shares WHERE id = ?", (share_id,)).fetchone()
+        return dict(row) if row else None
+
+    def update_drive_share(
+        self,
+        share_id: str,
+        owner_username: str,
+        invite_code: Optional[str] = None,
+        expires_at: Optional[str] = None,
+        max_downloads: Optional[int] = None,
+        require_login: bool = False,
+    ) -> Optional[Dict[str, Any]]:
+        conn = self._conn()
+        with conn:
+            cur = conn.execute(
+                """UPDATE drive_shares
+                   SET invite_code = ?, expires_at = ?, max_downloads = ?, require_login = ?
+                   WHERE id = ? AND owner_username = ?""",
+                (invite_code or None, expires_at or None, max_downloads, 1 if require_login else 0, share_id, owner_username),
+            )
+            if cur.rowcount <= 0:
+                return None
+        return self.get_drive_share(share_id, owner_username)
+
+    def delete_drive_share(self, share_id: str, owner_username: str) -> bool:
+        conn = self._conn()
+        with conn:
+            cur = conn.execute(
+                "DELETE FROM drive_shares WHERE id = ? AND owner_username = ?",
+                (share_id, owner_username),
+            )
+        return cur.rowcount > 0
+
+    def increment_share_download_count(self, share_id: str) -> None:
+        conn = self._conn()
+        with conn:
+            conn.execute(
+                "UPDATE drive_shares SET download_count = download_count + 1 WHERE id = ?",
+                (share_id,),
+            )
+
+    def log_drive_share_access(self, share_id: str, access_type: str, access_status: str,
+                               username: Optional[str] = None,
+                               ip_address: Optional[str] = None,
+                               user_agent: Optional[str] = None) -> Dict[str, Any]:
+        log_id = uuid.uuid4().hex
+        timestamp = utcnow_str()
+        conn = self._conn()
+        with conn:
+            conn.execute(
+                """INSERT INTO drive_share_access_logs
+                   (id, share_id, access_type, access_status, username, ip_address, user_agent, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (log_id, share_id, access_type, access_status, username, ip_address, user_agent, timestamp),
+            )
+        return {
+            "id": log_id,
+            "share_id": share_id,
+            "access_type": access_type,
+            "access_status": access_status,
+            "username": username,
+            "ip_address": ip_address,
+            "user_agent": user_agent,
+            "created_at": timestamp,
+        }
+
+    def list_drive_share_access_logs(self, share_id: str, owner_username: str, limit: int = 100) -> List[Dict[str, Any]]:
+        conn = self._conn()
+        rows = conn.execute(
+            """SELECT l.*
+               FROM drive_share_access_logs l
+               JOIN drive_shares s ON s.id = l.share_id
+               WHERE l.share_id = ? AND s.owner_username = ?
+               ORDER BY l.created_at DESC
+               LIMIT ?""",
+            (share_id, owner_username, limit),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_user_theme(self, username: str) -> str:
+        conn = self._conn()
+        row = conn.execute(
+            "SELECT theme FROM user_preferences WHERE username = ?",
+            (username,),
+        ).fetchone()
+        if not row or row["theme"] not in {"light", "dark"}:
+            return "light"
+        return str(row["theme"])
+
+    def set_user_theme(self, username: str, theme: str) -> str:
+        if theme not in {"light", "dark"}:
+            raise ValueError("仅支持亮色或暗色主题")
+        conn = self._conn()
+        timestamp = utcnow_str()
+        with conn:
+            conn.execute(
+                """INSERT INTO user_preferences (username, theme, updated_at)
+                   VALUES (?, ?, ?)
+                   ON CONFLICT(username) DO UPDATE SET
+                       theme = excluded.theme,
+                       updated_at = excluded.updated_at""",
+                (username, theme, timestamp),
+            )
+        return theme
 
     # Feedback ---------------------------------------------------------
 

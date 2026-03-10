@@ -8,6 +8,7 @@ from flask import Flask, abort, current_app, flash, redirect, request, session, 
 from flask_login import LoginManager, current_user
 
 from .datastore import DataStore
+from .security import login_redirect_target
 
 
 login_manager = LoginManager()
@@ -78,9 +79,9 @@ def create_app() -> Flask:
         if current_user.is_authenticated:
             return None
         endpoint = request.endpoint or ""
-        if endpoint == "auth.login" or endpoint.startswith("static"):
+        if endpoint in {"auth.login", "drive.share_page", "drive.share_download", "drive.share_qr"} or endpoint.startswith("static"):
             return None
-        return redirect(url_for("auth.login", next=request.url))
+        return redirect(login_redirect_target())
 
     @app.before_request
     def enforce_banned_guard():
@@ -97,13 +98,16 @@ def create_app() -> Flask:
     @app.context_processor
     def inject_globals():
         unread_messages = 0
+        theme_preference = None
         if current_user.is_authenticated:
             unread_messages = datastore.count_unread_messages(current_user.username, notify_only=True)
+            theme_preference = datastore.get_user_theme(current_user.username)
         return {
             "is_admin": getattr(current_user, "is_admin", False),
             "current_year": datetime.now().year,
             "unread_message_count": unread_messages,
             "csrf_token": _get_csrf_token,
+            "theme_preference": theme_preference,
         }
 
     return app

@@ -15,6 +15,7 @@ from mdit_py_plugins.container import container_plugin
 from mdit_py_plugins.tasklists import tasklists_plugin
 
 from .datastore import DEFAULT_CATEGORY_TAG, DEFAULT_CLASS_TAG, ISO_FORMAT, DataStore
+from .security import login_redirect_target, safe_redirect_target
 
 
 bp = Blueprint("blog", __name__)
@@ -502,7 +503,7 @@ def detail(post_id: str):
     if request.method == "POST":
         if not current_user.is_authenticated:
             flash("请先登录后再发表评论", "error")
-            return redirect(url_for("auth.login", next=request.url))
+            return redirect(login_redirect_target())
         content = request.form.get("content", "").strip()
         if not content:
             flash("评论内容不能为空", "error")
@@ -546,9 +547,7 @@ def favorite(post_id: str):
     next_url = (request.form.get("next") or "").strip()
     if not next_url:
         next_url = request.referrer or url_for("blog.detail", post_id=post_id)
-    # 安全检查：确保跳转 URL 不会跳转到站外（防止 Open Redirect），如果包含域名且不是本站则重置
-    if next_url.startswith(("http://", "https://")) and request.host not in next_url:
-        next_url = url_for("blog.detail", post_id=post_id)
+    next_url = safe_redirect_target(next_url, url_for("blog.detail", post_id=post_id))
     
     try:
         if action == "remove":
@@ -755,8 +754,22 @@ def user_profile(username: str):
         abort(404)
 
     can_edit_real_name = current_user.is_authenticated and current_user.is_admin
+    viewing_self = current_user.is_authenticated and current_user.username == username
 
     if request.method == "POST":
+        action = (request.form.get("action") or "update_real_name").strip()
+        if action == "set_theme":
+            if not viewing_self:
+                abort(403)
+            theme = (request.form.get("theme") or "").strip()
+            try:
+                datastore.set_user_theme(username, theme)
+            except ValueError as exc:
+                flash(str(exc), "error")
+            else:
+                flash("界面主题已更新", "success")
+            return redirect(url_for("blog.user_profile", username=username, _anchor="appearance-settings"))
+
         if not can_edit_real_name:
             abort(403)
         real_name = request.form.get("real_name", "").strip()
@@ -777,12 +790,18 @@ def user_profile(username: str):
             [post["id"] for post in raw_posts],
         )
     user_posts = [_decorate_post(post, user_map, viewer_favorite_ids) for post in raw_posts]
-    viewing_self = current_user.is_authenticated and current_user.username == username
     favorite_posts = []
+    share_overview = None
     if viewing_self:
         favorites_raw = datastore.list_favorite_posts(username)
         owned_favorite_ids = {post["id"] for post in favorites_raw}
         favorite_posts = [_decorate_post(post, user_map, owned_favorite_ids) for post in favorites_raw]
+        own_shares = datastore.list_drive_owner_shares(username)
+        share_overview = {
+            "total": len(own_shares),
+            "protected": sum(1 for item in own_shares if item.get("require_login")),
+            "downloads": sum(int(item.get("download_count") or 0) for item in own_shares),
+        }
     return render_template(
         "blog/user_profile.html",
         profile=user_record,
@@ -791,4 +810,6 @@ def user_profile(username: str):
         viewing_self=viewing_self,
         favorite_posts=favorite_posts if viewing_self else None,
         user_labels=datastore.get_user_labels(username),
+        theme_preference=datastore.get_user_theme(username) if viewing_self else None,
+        share_overview=share_overview,
     )

@@ -5,6 +5,19 @@
 {% block extra_head %}
     {{ super() }}
     {{ assets.markdown_view_styles() }}
+    <style>
+        .profile-tools-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:1rem; margin-top:1.25rem; }
+        .profile-tool-card { border:1px solid var(--border-color); border-radius:var(--radius-md); padding:1.1rem; background:rgba(79,70,229,.04); }
+        .profile-tool-card h2 { margin:0 0 .45rem; font-size:1.05rem; }
+        .profile-tool-card p { margin:0; color:var(--text-muted); line-height:1.7; }
+        .theme-switch-row { display:flex; gap:.75rem; flex-wrap:wrap; margin-top:1rem; }
+        .theme-switch-row .button { min-width:120px; }
+        .profile-overview-stats { display:flex; gap:.75rem; flex-wrap:wrap; margin:1rem 0 0; }
+        .profile-stat-pill { padding:.55rem .85rem; border-radius:999px; background:rgba(79,70,229,.1); color:var(--primary); font-weight:600; font-size:.88rem; }
+        .profile-admin-form { display:flex; gap:.5rem; align-items:center; flex-wrap:wrap; }
+        .profile-admin-form .input, .profile-admin-form .select { min-width:140px; }
+        @media (max-width: 640px) { .theme-switch-row .button { width:100%; } }
+    </style>
 {% endblock %}
 {% block extra_scripts %}
     {{ super() }}
@@ -32,8 +45,8 @@
             <div style="margin-top:.5rem;display:flex;flex-wrap:wrap;gap:.5rem;align-items:flex-end;">
                 <form method="post" action="{{ url_for('admin.add_user_label', username=profile['username']) }}" style="display:flex;gap:.35rem;align-items:center;flex-wrap:wrap;">
                     <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
-                    <input type="text" name="label" placeholder="标签名" maxlength="50" required style="width:120px;">
-                    <select name="color" style="padding:.3rem .5rem;border-radius:4px;border:1px solid #cbd5e1;">
+                    <input type="text" name="label" placeholder="标签名" maxlength="50" required class="input" style="width:140px;">
+                    <select name="color" class="select" style="width:120px;">
                         <option value="blue">蓝</option>
                         <option value="green">绿</option>
                         <option value="red">红</option>
@@ -69,8 +82,9 @@
             {% if can_edit_real_name %}
                 <form method="post" class="form-inline">
                     <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="action" value="update_real_name">
                     <label class="sr-only" for="real_name">真实姓名</label>
-                    <input type="text" id="real_name" name="real_name" value="{{ profile.get('real_name', '') }}" required>
+                    <input type="text" id="real_name" name="real_name" value="{{ profile.get('real_name', '') }}" required class="input">
                     <button type="submit" class="button primary">保存</button>
                 </form>
             {% else %}
@@ -78,6 +92,42 @@
             {% endif %}
         </div>
     </div>
+
+    {% if viewing_self %}
+    <div class="profile-tools-grid">
+        <section class="profile-tool-card" id="appearance-settings">
+            <h2>界面外观</h2>
+            <p>在这里统一选择亮色或暗色主题，设置会立即生效。</p>
+            <form method="post" style="margin-top:1rem;">
+                <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="set_theme">
+                <div class="theme-switch-row">
+                    <button type="submit" name="theme" value="light" class="button {% if theme_preference != 'dark' %}primary{% else %}ghost{% endif %}">切换亮色</button>
+                    <button type="submit" name="theme" value="dark" class="button {% if theme_preference == 'dark' %}primary{% else %}ghost{% endif %}">切换暗色</button>
+                </div>
+                <div style="display:flex;gap:.75rem;align-items:center;flex-wrap:wrap;margin-top:1rem;">
+                    <span class="muted-text">当前主题：{{ '暗色模式' if theme_preference == 'dark' else '亮色模式' }}</span>
+                </div>
+            </form>
+        </section>
+
+        <section class="profile-tool-card">
+            <h2>分享中心</h2>
+            <p>集中管理你的全部文件分享，支持统一查看链接、访问日志、权限和下载次数。</p>
+            {% if share_overview %}
+            <div class="profile-overview-stats">
+                <span class="profile-stat-pill">总分享 {{ share_overview.total }}</span>
+                <span class="profile-stat-pill">受保护 {{ share_overview.protected }}</span>
+                <span class="profile-stat-pill">总下载 {{ share_overview.downloads }}</span>
+            </div>
+            {% endif %}
+            <div style="display:flex;gap:.75rem;flex-wrap:wrap;margin-top:1rem;">
+                <a href="{{ url_for('drive.shares') }}" class="button primary">打开分享中心</a>
+                <a href="{{ url_for('drive.index') }}" class="button ghost">进入云盘</a>
+            </div>
+        </section>
+    </div>
+    {% endif %}
 </section>
 
 <section class="card">
@@ -182,4 +232,5 @@
     {% endif %}
 </section>
 {% endif %}
+
 {% endblock %}
