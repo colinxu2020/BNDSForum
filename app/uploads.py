@@ -280,11 +280,17 @@ def api_delete(upload_id: str):
 
 @bp.route("/image/<username>/<filename>")
 def serve_image(username: str, filename: str):
-    safe_user = re.sub(r"[^a-zA-Z0-9_-]", "_", username)[:64]
+    safe_user = secure_filename(username)
     safe_file = secure_filename(filename)
-    if not safe_file:
+    if not safe_user or not safe_file:
         abort(404)
-    directory = _uploads_dir() / safe_user
+    
+    from werkzeug.utils import safe_join
+    directory_str = safe_join(str(_uploads_dir()), safe_user)
+    if not directory_str:
+        abort(404)
+        
+    directory = Path(directory_str)
     if not directory.exists():
         abort(404)
 

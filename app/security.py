@@ -17,27 +17,16 @@ def current_path_with_query() -> str:
 
 
 def safe_redirect_target(target: str | None, fallback: str) -> str:
-    from werkzeug.urls import url_parse
     target = (target or "").strip()
     if not target:
         return fallback
 
-    # Reconstruct the URL without netloc to guarantee an intra-site redirect
-    parsed = urlparse(target)
-    if parsed.netloc:
-        if parsed.netloc.lower() != request.host.lower():
-            return fallback
+    # A widely recognized reliable check for open redirects
+    # Must explicitly start with a single slash, and not double slash
+    if target.startswith("/") and not target.startswith("//"):
+        return target
 
-    # Reconstructing guarantees we lose any tricky authority prefix
-    safe_path = parsed.path or "/"
-    if parsed.query:
-        safe_path += f"?{parsed.query}"
-    
-    # Avoid protocol-relative URLs that might trick browsers
-    if safe_path.startswith("//"):
-        safe_path = "/" + safe_path.lstrip("/")
-        
-    return safe_path
+    return fallback
 
 
 def login_redirect_target() -> str:
