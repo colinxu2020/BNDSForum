@@ -707,19 +707,9 @@ class DataStore:
                     "INSERT INTO users (username, password_hash, role, constant_tags, real_name) VALUES (?, ?, ?, ?, ?)",
                     ("admin", password_hash, "admin", '[]', ""),
                 )
-                if generated:
-                    password_file = self.base_path / "admin_initial_password.txt"
-                    try:
-                        password_file.write_text(
-                            "管理员账号：admin\n临时密码：%s\n请尽快登录并修改部署配置。\n" % default_password,
-                            encoding="utf-8",
-                        )
-                    except OSError:
-                        logger.warning("初始化管理员账号已创建，但写入初始密码文件失败，请改用环境变量 ADMIN_DEFAULT_PASSWORD 重新部署。")
-                    else:
-                        logger.warning("初始化管理员账号已创建，临时密码已写入 %s，请妥善保存并及时删除。", password_file)
-                else:
-                    logger.info("初始化管理员账号已创建，用户名 admin，使用环境变量指定密码")
+                print(
+                    "初始化管理员账号已创建，用户名：admin\n临时密码：%s\n请尽快登录并修改部署配置，此密码只会显示一次！\n" % default_password,
+                )
 
     @staticmethod
     def _ensure_system_user(conn: sqlite3.Connection) -> None:
