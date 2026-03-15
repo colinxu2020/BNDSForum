@@ -260,6 +260,42 @@ def user_list():
     )
 
 
+@bp.route("/users/create", methods=["POST"])
+@login_required
+def create_user():
+    if not current_user.is_admin:
+        return redirect(url_for("blog.index"))
+
+    username = request.form.get("username", "").strip()
+    real_name = request.form.get("real_name", "").strip()
+    password = request.form.get("password", "")
+    role = request.form.get("role", "user").strip().lower()
+
+    if not username or not password:
+        flash("用户名和密码不能为空", "error")
+        return redirect(url_for("admin.user_list"))
+
+    if role not in {"user", "admin"}:
+        role = "user"
+
+    datastore = get_datastore()
+    try:
+        datastore.create_user(
+            username=username,
+            password=password,
+            role=role,
+            real_name=real_name,
+        )
+        flash(f"用户 {username} 创建成功", "success")
+        _notify_admins(f"管理员 {current_user.username} 创建用户：{username}（角色：{role}）")
+    except ValueError as exc:
+        flash(str(exc), "error")
+    except Exception:
+        current_app.logger.exception("管理员创建用户失败：%s", username)
+        flash("创建用户失败，请稍后重试", "error")
+    return redirect(url_for("admin.user_list"))
+
+
 @bp.route("/tags/add", methods=["POST"])
 @login_required
 def add_category_tag():

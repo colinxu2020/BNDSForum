@@ -2336,7 +2336,7 @@ class DataStore:
 
     # Upload / image hosting -------------------------------------------
 
-    DEFAULT_QUOTA_BYTES = 5 * 1024 * 1024 * 1024  # 5 GB
+    DEFAULT_QUOTA_BYTES = 1 * 1024 * 1024 * 1024  # 1 GB
 
     def get_user_quota(self, username: str) -> int:
         conn = self._conn()
