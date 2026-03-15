@@ -18,16 +18,7 @@ login_manager.login_view = "auth.login"
 def create_app() -> Flask:
     app = Flask(__name__, template_folder="templates", static_folder="static")
 
-    secret_key = os.getenv("SECRET_KEY", "")
-    if not secret_key:
-        import secrets as _secrets
-        secret_key = _secrets.token_hex(32)
-        import logging as _logging
-        _logging.getLogger(__name__).warning(
-            "SECRET_KEY 未设置，本次使用随机密钥（所有 session 将在重启后失效）。"
-            "请在生产部署中通过环境变量 SECRET_KEY 配置持久密钥。"
-        )
-    app.config["SECRET_KEY"] = secret_key
+    app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "dev-secret-key")
     # Session cookie hardening
     app.config.setdefault("SESSION_COOKIE_HTTPONLY", True)
     app.config.setdefault("SESSION_COOKIE_SAMESITE", "Lax")
