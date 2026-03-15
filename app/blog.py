@@ -514,7 +514,6 @@ def detail(post_id: str):
             snippet = content if len(content) <= 60 else content[:57] + "…"
             title_display = post.get("title", "")
             title_display = title_display if len(title_display) <= 40 else title_display[:37] + "…"
-            _notify_system(f"用户 {current_user.username} 在文章《{title_display}》发表评论：{snippet}")
             return redirect(url_for("blog.detail", post_id=post_id))
     user_map = _user_lookup(datastore)
     favorite_post_ids: Set[str] = set()
@@ -555,22 +554,16 @@ def favorite(post_id: str):
         if action == "remove":
             removed = datastore.unfavorite_post(post_id, current_user.username)
             flash("已取消收藏" if removed else "该文章不在收藏夹中", "success" if removed else "info")
-            if removed:
-                _notify_system(f"用户 {current_user.username} 取消收藏文章《{title_display}》")
         elif action == "toggle":
             if datastore.is_post_favorited(post_id, current_user.username):
                 datastore.unfavorite_post(post_id, current_user.username)
                 flash("已取消收藏", "success")
-                _notify_system(f"用户 {current_user.username} 取消收藏文章《{title_display}》")
             else:
                 datastore.favorite_post(post_id, current_user.username)
                 flash("收藏成功", "success")
-                _notify_system(f"用户 {current_user.username} 收藏文章《{title_display}》")
         else:
             added = datastore.favorite_post(post_id, current_user.username)
             flash("收藏成功" if added else "文章已在收藏夹中", "success" if added else "info")
-            if added:
-                _notify_system(f"用户 {current_user.username} 收藏文章《{title_display}》")
     except ValueError:
         flash("未找到文章，无法进行收藏操作", "error")
         return redirect(url_for("blog.index"))
@@ -617,7 +610,6 @@ def delete_comment(post_id: str, comment_id: str):
         flash("评论已删除", "success")
         title_display = post.get("title", "")
         title_display = title_display if len(title_display) <= 40 else title_display[:37] + "…"
-        _notify_system(f"用户 {current_user.username} 删除了文章《{title_display}》的一条评论")
     return redirect(url_for("blog.detail", post_id=post_id))
 
 
@@ -694,7 +686,6 @@ def edit(post_id: str):
             )
             flash("文章已更新", "success")
             title_display = title if len(title) <= 40 else title[:37] + "…"
-            _notify_system(f"用户 {current_user.username} 更新文章《{title_display}》")
             return redirect(url_for("blog.detail", post_id=post_id))
     selected_category = current_category
     selected_class = current_class
