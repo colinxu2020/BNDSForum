@@ -4,6 +4,7 @@ import html
 import os
 import re
 import time
+import typing
 from urllib.parse import urlparse
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, Set
@@ -71,7 +72,7 @@ class OnlineJudgeClient:
     _CSRF_RE = re.compile(r'name="_csrf"\s+value="([^"]+)"')
     _TITLE_RE = re.compile(r"<title>(.*?)</title>", re.S)
     _GROUP_LINK_RE = re.compile(r"/group/(?:index|view)?/?(\d+)[^>]*>([^<]+)<", re.I)
-    _LOGIN_FORM_RE = re.compile(r"LoginForm\[username\]|LoginForm\[password\]", re.I)
+    _LOGIN_FORM_RE = re.compile(r"LoginForm\[username]|LoginForm\[password]", re.I)
 
     def __init__(
         self,
@@ -97,7 +98,8 @@ class OnlineJudgeClient:
 
             disable_warnings(InsecureRequestWarning)
 
-    def _build_session(self) -> Session:
+    @staticmethod
+    def _build_session() -> Session:
         session = requests.Session()
         session.headers.update({"User-Agent": "BNDSForum/1.0 (+https://onlinejudge.bnds.cn/)"})
         return session
@@ -143,9 +145,6 @@ class OnlineJudgeClient:
         body = response.text
         if "用户名不存在" in body:
             raise OJAccountNotFound(f"账户 {username} 不存在")
-        if "密码错误" in body:
-            print('Request Failed')
-            raise OJInvalidCredentials("密码错误")
 
         raise OJServiceUnavailable("OJ 登录返回了未预期的响应")
 
@@ -213,7 +212,7 @@ class OnlineJudgeClient:
         for group_id, name in self._GROUP_LINK_RE.findall(response.text):
             if group_id in seen_ids:
                 continue
-            cleaned = html.unescape(name).strip()
+            cleaned = typing.cast(str, html.unescape(name).strip())
             if not cleaned:
                 continue
             seen_ids.add(group_id)
@@ -369,7 +368,7 @@ class OnlineJudgeClient:
                     break
             if not table:
                 if page == 1:
-                    return ([], False)
+                    return [], False
                 break
 
             rows = table.select("tbody tr")
@@ -407,7 +406,7 @@ class OnlineJudgeClient:
             page += 1
             time.sleep(0.2)
 
-        return (members, success)
+        return members, success
 
     def _scrape_username_from_profile(self, session: Session, href: str) -> Optional[str]:
         target = self._url(href)
@@ -461,7 +460,7 @@ class OnlineJudgeClient:
         session: Session,
         user_id: str,
         user_cache: Dict[str, Tuple[str, str]],
-    ) -> Tuple[str | None, str]:
+    ) -> Tuple[Optional[str], str]:
         if user_id in user_cache:
             return user_cache[user_id]
         try:
@@ -483,7 +482,8 @@ class OnlineJudgeClient:
         user_cache[user_id] = (username or "", nickname or "")
         return user_cache[user_id]
 
-    def _extract_detail_value(self, soup: BeautifulSoup, label: str) -> Optional[str]:
+    @staticmethod
+    def _extract_detail_value(soup: BeautifulSoup, label: str) -> Optional[str]:
         header = soup.find("th", string=label)
         if not header:
             return None
@@ -492,7 +492,8 @@ class OnlineJudgeClient:
             return None
         return cell.get_text(strip=True)
 
-    def _parse_query_param(self, href: str, key: str) -> Optional[str]:
+    @staticmethod
+    def _parse_query_param(href: str, key: str) -> Optional[str]:
         if "?" not in href:
             return None
         query = href.split("?", 1)[1]

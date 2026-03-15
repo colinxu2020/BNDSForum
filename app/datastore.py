@@ -198,11 +198,8 @@ class DataStore:
             conn = self._conn()
             self._ensure_schema(conn)
             self._maybe_migrate_legacy(conn)
-            self._sync_constant_tag_catalog(conn)
-            self._disable_constant_tags(conn)
             self._ensure_tag_defaults(conn)
             self._migrate_post_tag_columns(conn)
-            self._ensure_root_node(conn)
             self._bootstrap_admin(conn)
             self._ensure_system_user(conn)
             self._setup_complete = True
@@ -499,15 +496,6 @@ class DataStore:
             if "require_login" not in drive_share_columns:
                 conn.execute("ALTER TABLE drive_shares ADD COLUMN require_login INTEGER NOT NULL DEFAULT 0")
 
-    def _ensure_root_node(self, conn: sqlite3.Connection) -> None:
-        with conn:
-            conn.execute(
-                "INSERT OR IGNORE INTO tag_nodes (id, tag, parent_id) VALUES ('root', NULL, NULL)"
-            )
-            conn.execute(
-                "UPDATE tag_nodes SET tag = NULL, parent_id = NULL WHERE id = 'root'"
-            )
-
     def _maybe_migrate_legacy(self, conn: sqlite3.Connection) -> None:
         sentinel = self.base_path / ".sqlite_migrated"
         if sentinel.exists():
@@ -536,7 +524,7 @@ class DataStore:
                         user.get("username"),
                         user.get("password_hash"),
                         user.get("role", "user"),
-                        json.dumps(sorted(set(user.get("constant_tags", []))), ensure_ascii=False),
+                        '[]',
                         user.get("real_name", ""),
                     ),
                 )
@@ -548,7 +536,6 @@ class DataStore:
             tree = legacy.get("tag_tree")
             if tree:
                 conn.execute("DELETE FROM tag_nodes")
-                self._write_tag_tree(conn, tree)
             for post in legacy.get("posts", []):
                 conn.execute(
                     "INSERT OR IGNORE INTO posts (id, author, title, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
@@ -583,41 +570,6 @@ class DataStore:
         except OSError:
             pass
 
-    def _sync_constant_tag_catalog(self, conn: sqlite3.Connection) -> None:
-        return
-
-    def _disable_constant_tags(self, conn: sqlite3.Connection) -> None:
-        with conn:
-            conn.execute("DELETE FROM constant_tags")
-            conn.execute("UPDATE users SET constant_tags = '[]'")
-
-    def _write_tag_tree(self, conn: sqlite3.Connection, tree: Dict[str, Any]) -> None:
-        nodes = {node.get("id"): node for node in tree.get("nodes", []) if node.get("id")}
-        if "root" not in nodes:
-            nodes["root"] = {"id": "root", "tag": None, "children": []}
-        parents: Dict[str, Optional[str]] = {"root": None}
-        for node in nodes.values():
-            for child_id in node.get("children", []):
-                parents[child_id] = node.get("id")
-        visited = set()
-
-        def insert_node(node_id: str) -> None:
-            if node_id in visited:
-                return
-            parent_id = parents.get(node_id)
-            if parent_id and parent_id not in visited:
-                insert_node(parent_id)
-            node = nodes.get(node_id, {"id": node_id, "tag": None, "children": []})
-            conn.execute(
-                "INSERT OR REPLACE INTO tag_nodes (id, tag, parent_id) VALUES (?, ?, ?)",
-                (node_id, node.get("tag"), parent_id),
-            )
-            visited.add(node_id)
-            for child_id in node.get("children", []):
-                insert_node(child_id)
-
-        insert_node("root")
-
     def _load_legacy_payload(self) -> Dict[str, Any]:
         return {
             "users": self._load_legacy_users(),
@@ -639,7 +591,6 @@ class DataStore:
             if not isinstance(item, dict) or "username" not in item or "password_hash" not in item:
                 continue
             item.setdefault("role", "user")
-            item.setdefault("constant_tags", [])
             item.setdefault("real_name", "")
             result.append(item)
         return result
@@ -754,7 +705,7 @@ class DataStore:
                 password_hash = generate_password_hash(default_password)
                 conn.execute(
                     "INSERT INTO users (username, password_hash, role, constant_tags, real_name) VALUES (?, ?, ?, ?, ?)",
-                    ("admin", password_hash, "admin", json.dumps([], ensure_ascii=False), ""),
+                    ("admin", password_hash, "admin", '[]', ""),
                 )
                 if generated:
                     password_file = self.base_path / "admin_initial_password.txt"
@@ -770,7 +721,8 @@ class DataStore:
                 else:
                     logger.info("初始化管理员账号已创建，用户名 admin，使用环境变量指定密码")
 
-    def _ensure_system_user(self, conn: sqlite3.Connection) -> None:
+    @staticmethod
+    def _ensure_system_user(conn: sqlite3.Connection) -> None:
         with conn:
             row = conn.execute(
                 "SELECT role FROM users WHERE username = ?",
@@ -807,7 +759,7 @@ class DataStore:
                     "username": row["username"],
                     "password_hash": row["password_hash"],
                     "role": row["role"],
-                    "constant_tags": self._deserialize_tags(row["constant_tags"]),
+                    "constant_tags": [],
                     "real_name": row["real_name"],
                     "is_banned": bool(row["is_banned"]),
                 }
@@ -856,7 +808,7 @@ class DataStore:
             "username": row["username"],
             "password_hash": row["password_hash"],
             "role": row["role"],
-            "constant_tags": self._deserialize_tags(row["constant_tags"]),
+            "constant_tags": [],
             "real_name": row["real_name"],
             "is_banned": bool(row["is_banned"]),
         }
@@ -869,7 +821,7 @@ class DataStore:
             username=record["username"],
             password_hash=record["password_hash"],
             role=record.get("role", "user"),
-            constant_tags=record.get("constant_tags", []),
+            constant_tags=[],
             real_name=record.get("real_name", ""),
             is_banned=bool(record.get("is_banned", False)),
         )
@@ -879,12 +831,10 @@ class DataStore:
         username: str,
         password: str,
         role: str = "user",
-        constant_tags: Optional[Iterable[str]] = None,
         real_name: str = "",
     ) -> User:
         if self.get_user(username):
             raise ValueError("用户已存在")
-        prepared_tags: List[str] = []
         conn = self._conn()
         password_hash = generate_password_hash(password)
         with conn:
@@ -894,7 +844,7 @@ class DataStore:
                     username,
                     password_hash,
                     role,
-                    json.dumps(prepared_tags, ensure_ascii=False),
+                    '[]',
                     real_name.strip(),
                 ),
             )
@@ -902,7 +852,6 @@ class DataStore:
             username=username,
             password_hash=password_hash,
             role=role,
-            constant_tags=prepared_tags,
             real_name=real_name.strip(),
             is_banned=False,
         )
@@ -938,7 +887,6 @@ class DataStore:
                 raise ValueError("未找到用户")
 
     def verify_user(self, username: str, password: str) -> Optional[User]:
-        fallback_to_local = True
         if self._oj_client:
             try:
                 remote_user = self._oj_client.authenticate(username, password)
@@ -947,11 +895,8 @@ class DataStore:
             except (OJAccountNotFound, OJServiceUnavailable):
                 pass
             else:
-                fallback_to_local = False
                 return self._upsert_remote_user(remote_user, password)
-        if fallback_to_local:
-            return self._verify_local_credentials(username, password)
-        return None
+        return self._verify_local_credentials(username, password)
 
     def verify_user_with_cookie(self, username: str, phpsessid: str) -> Optional[User]:
         if not phpsessid:
@@ -975,8 +920,6 @@ class DataStore:
         try:
             return self._oj_client.resolve_username_from_cookie(phpsessid)
         except OJLoginError:
-            return None
-        except OJServiceUnavailable:
             return None
 
     def _verify_local_credentials(self, username: str, password: str) -> Optional[User]:
@@ -1139,8 +1082,6 @@ class DataStore:
         *,
         category_tag: str,
         class_tag: str,
-        extra_tags: Optional[Iterable[str]] = None,
-        author_constant_tags: Optional[Iterable[str]] = None,
         is_hidden: bool = False,
     ) -> Dict[str, Any]:
         conn = self._conn()
@@ -1149,8 +1090,6 @@ class DataStore:
         category = (category_tag or DEFAULT_CATEGORY_TAG).strip() or DEFAULT_CATEGORY_TAG
         class_value = (class_tag or DEFAULT_CLASS_TAG).strip() or DEFAULT_CLASS_TAG
         all_tags = [category, class_value]
-        if extra_tags:
-            all_tags.extend(extra_tags)
         normalized_tags = self._normalize_tags(all_tags)
         with conn:
             conn.execute(
@@ -1185,8 +1124,6 @@ class DataStore:
         content: Optional[str] = None,
         category_tag: Optional[str] = None,
         class_tag: Optional[str] = None,
-        extra_tags: Optional[Iterable[str]] = None,
-        author_constant_tags: Optional[Iterable[str]] = None,
         is_hidden: Optional[bool] = None,
     ) -> Dict[str, Any]:
         conn = self._conn()
@@ -1223,7 +1160,7 @@ class DataStore:
         if is_hidden is not None:
             updates.append("is_hidden = ?")
             params.append(1 if is_hidden else 0)
-        should_update_tags = extra_tags is not None or category_tag is not None or class_tag is not None
+        should_update_tags = category_tag is not None or class_tag is not None
         should_touch = bool(updates) or should_update_tags
         if should_touch:
             updates.append("updated_at = ?")
@@ -1235,11 +1172,7 @@ class DataStore:
             if updates:
                 conn.execute(f"UPDATE posts SET {', '.join(updates)} WHERE id = ?", params)
             if should_update_tags:
-                extras_existing = [tag for tag in existing.get("tags", []) if tag not in {current_category, current_class}]
-                extras = extras_existing
-                if extra_tags is not None:
-                    extras = list(extra_tags)
-                normalized_tags = self._normalize_tags([new_category, new_class, *extras])
+                normalized_tags = self._normalize_tags([new_category, new_class])
                 self._replace_post_tags(conn, post_id, normalized_tags)
         refreshed = self.get_post(post_id)
         if refreshed is None:
@@ -1365,7 +1298,8 @@ class DataStore:
 
     # Private messaging -------------------------------------------------
 
-    def _message_row_to_dict(self, row: sqlite3.Row) -> Dict[str, Any]:
+    @staticmethod
+    def _message_row_to_dict(row: sqlite3.Row) -> Dict[str, Any]:
         return {
             "id": row["id"],
             "sender": row["sender"],
@@ -1871,7 +1805,7 @@ class DataStore:
         finally:
             self._release_class_sync_lock()
 
-    def update_class_groups_from_cookie(self, username: str, phpsessid: str) -> None:
+    def update_class_groups_from_cookie(self, phpsessid: str) -> None:
         if not self._oj_client:
             return
         now = datetime.now(timezone.utc)
@@ -2129,15 +2063,16 @@ class DataStore:
         nodes["root"]["children"] = root_children
         return {"nodes": list(nodes.values())}
 
-    def _ensure_category_exists(self, conn: sqlite3.Connection, tag: str) -> None:
+    @staticmethod
+    def _ensure_category_exists(conn: sqlite3.Connection, tag: str) -> None:
         name = (tag or "").strip()
         if not name:
             return
         conn.execute("INSERT OR IGNORE INTO normal_tags (name, is_column) VALUES (?, 0)", (name,))
 
+    @staticmethod
     def _ensure_class_exists(
-        self,
-        conn: sqlite3.Connection,
+            conn: sqlite3.Connection,
         tag: str,
         *,
         source: str = "manual",
@@ -2219,79 +2154,6 @@ class DataStore:
         with conn:
             conn.execute("DELETE FROM normal_tags WHERE name = ?", (tag,))
 
-    # Tag tree ---------------------------------------------------------
-
-    def get_tag_tree(self) -> Dict[str, Any]:
-        conn = self._conn()
-        rows = conn.execute(
-            "SELECT id, tag, parent_id, rowid FROM tag_nodes ORDER BY rowid"
-        ).fetchall()
-        nodes: Dict[str, Dict[str, Any]] = {}
-        children: Dict[str, List[str]] = {}
-        for row in rows:
-            node_id = row["id"]
-            nodes[node_id] = {
-                "id": node_id,
-                "tag": row["tag"],
-                "children": [],
-            }
-            children.setdefault(node_id, [])
-        for row in rows:
-            parent_id = row["parent_id"]
-            node_id = row["id"]
-            if parent_id:
-                children.setdefault(parent_id, []).append(node_id)
-        for node_id, node in nodes.items():
-            node["children"] = children.get(node_id, [])
-        return {"nodes": list(nodes.values())}
-
-    def save_tag_tree(self, tree: Dict[str, Any]) -> None:
-        conn = self._conn()
-        nodes = {node.get("id"): node for node in tree.get("nodes", []) if node.get("id")}
-        if "root" not in nodes:
-            raise ValueError("树必须包含根节点")
-        with conn:
-            conn.execute("DELETE FROM tag_nodes")
-            self._write_tag_tree(conn, tree)
-
-    def add_tree_node(self, parent_id: str, tag: Optional[str]) -> Dict[str, Any]:
-        conn = self._conn()
-        node_id = uuid.uuid4().hex
-        with conn:
-            parent_exists = conn.execute(
-                "SELECT 1 FROM tag_nodes WHERE id = ?",
-                (parent_id,),
-            ).fetchone()
-            if not parent_exists:
-                raise ValueError("父节点不存在")
-            conn.execute(
-                "INSERT INTO tag_nodes (id, tag, parent_id) VALUES (?, ?, ?)",
-                (node_id, tag, parent_id),
-            )
-        return {"id": node_id, "tag": tag, "children": []}
-
-    def update_tree_node(self, node_id: str, *, tag: Optional[str] = None) -> None:
-        conn = self._conn()
-        with conn:
-            if node_id == "root":
-                conn.execute("UPDATE tag_nodes SET tag = NULL WHERE id = 'root'")
-                return
-            updated = conn.execute(
-                "UPDATE tag_nodes SET tag = ? WHERE id = ?",
-                (tag, node_id),
-            )
-            if updated.rowcount == 0:
-                raise ValueError("节点不存在")
-
-    def remove_tree_node(self, node_id: str) -> None:
-        if node_id == "root":
-            raise ValueError("不能删除根节点")
-        conn = self._conn()
-        with conn:
-            deleted = conn.execute("DELETE FROM tag_nodes WHERE id = ?", (node_id,))
-            if deleted.rowcount == 0:
-                raise ValueError("节点不存在")
-
     # Query helpers ----------------------------------------------------
 
     def posts_with_tags(self, required_tags: Iterable[str]) -> List[Dict[str, Any]]:
@@ -2340,7 +2202,8 @@ class DataStore:
 
     # Internal helpers -------------------------------------------------
 
-    def _replace_post_tags(self, conn: sqlite3.Connection, post_id: str, tags: Sequence[str]) -> None:
+    @staticmethod
+    def _replace_post_tags(conn: sqlite3.Connection, post_id: str, tags: Sequence[str]) -> None:
         conn.execute("DELETE FROM post_tags WHERE post_id = ?", (post_id,))
         if tags:
             conn.executemany(
@@ -2378,7 +2241,8 @@ class DataStore:
             )
         return posts
 
-    def _load_tags_for_posts(self, conn: sqlite3.Connection, post_ids: Sequence[str]) -> Dict[str, List[str]]:
+    @staticmethod
+    def _load_tags_for_posts(conn: sqlite3.Connection, post_ids: Sequence[str]) -> Dict[str, List[str]]:
         if not post_ids:
             return {}
         placeholders = ",".join(["?"] * len(post_ids))
@@ -2393,7 +2257,8 @@ class DataStore:
             tags.sort()
         return result
 
-    def _load_comments_for_posts(self, conn: sqlite3.Connection, post_ids: Sequence[str]) -> Dict[str, List[Dict[str, Any]]]:
+    @staticmethod
+    def _load_comments_for_posts(conn: sqlite3.Connection, post_ids: Sequence[str]) -> Dict[str, List[Dict[str, Any]]]:
         if not post_ids:
             return {}
         placeholders = ",".join(["?"] * len(post_ids))
@@ -2418,7 +2283,8 @@ class DataStore:
             )
         return result
 
-    def _load_favorite_counts(self, conn: sqlite3.Connection, post_ids: Sequence[str]) -> Dict[str, int]:
+    @staticmethod
+    def _load_favorite_counts(conn: sqlite3.Connection, post_ids: Sequence[str]) -> Dict[str, int]:
         if not post_ids:
             return {}
         placeholders = ",".join(["?"] * len(post_ids))
@@ -2870,26 +2736,6 @@ class DataStore:
 
     # ─── User Labels ───
 
-    def add_user_label(self, username: str, label: str, color: str, created_by: str) -> dict:
-        """Attach a label/badge to a user (admin-only by convention in the view layer)."""
-        label = label.strip()[:50]
-        color = color.strip()[:20] if color else "blue"
-        if not label:
-            raise ValueError("标签名不能为空")
-        label_id = str(uuid.uuid4())
-        conn = self._conn()
-        with conn:
-            conn.execute(
-                """INSERT INTO user_labels (id, username, label, color, created_by, created_at)
-                   VALUES (?, ?, ?, ?, ?, ?)
-                   ON CONFLICT(username, label) DO UPDATE SET
-                       color=excluded.color,
-                       created_by=excluded.created_by,
-                       created_at=excluded.created_at""",
-                (label_id, username, label, color, created_by, utcnow_str()),
-            )
-        return {"id": label_id, "username": username, "label": label, "color": color, "created_by": created_by}
-
     def remove_user_label(self, username: str, label: str) -> None:
         conn = self._conn()
         with conn:
@@ -2905,6 +2751,10 @@ class DataStore:
 
     def add_user_label(self, username: str, label: str, color: str, created_by: str) -> None:
         conn = self._conn()
+        label = label.strip()[:50]
+        color = color.strip()[:20] if color else "blue"
+        if not label:
+            raise ValueError("标签名不能为空")
         with conn:
             try:
                 conn.execute(
@@ -2913,11 +2763,6 @@ class DataStore:
                 )
             except sqlite3.IntegrityError:
                 raise ValueError(f"用户 {username} 已有标签「{label}」")
-
-    def remove_user_label(self, username: str, label: str) -> None:
-        conn = self._conn()
-        with conn:
-            conn.execute("DELETE FROM user_labels WHERE username = ? AND label = ?", (username, label))
 
     def list_all_user_labels(self) -> dict:
         """Returns a dict mapping username -> list of label dicts."""

@@ -10,7 +10,7 @@ from flask import Blueprint, abort, current_app, flash, redirect, render_templat
 from flask_login import current_user, login_required
 
 from .datastore import DataStore, DEFAULT_CATEGORY_TAG, DEFAULT_CLASS_TAG
-from .security import login_redirect_target, safe_redirect_target
+from .security import login_redirect_target
 
 
 bp = Blueprint("admin", __name__)

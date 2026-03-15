@@ -4,11 +4,9 @@ import logging
 import threading
 
 from flask import Blueprint, current_app, flash, redirect, render_template, request, url_for
-from flask_login import current_user, login_required, login_user, logout_user
+from flask_login import login_required, login_user, logout_user
 
-from .datastore import DataStore, utcnow_str
-from .security import safe_redirect_target
-
+from .datastore import DataStore
 
 bp = Blueprint("auth", __name__, url_prefix="/auth")
 
@@ -34,7 +32,7 @@ def _sync_class_groups_async(datastore: DataStore, username: str, password: str)
 def _sync_class_groups_async_cookie(datastore: DataStore, username: str, phpsessid: str) -> None:
     def _runner() -> None:
         try:
-            datastore.update_class_groups_from_cookie(username, phpsessid)
+            datastore.update_class_groups_from_cookie(phpsessid)
         except Exception:  # pragma: no cover - best effort background job
             logger.exception("异步同步班级数据失败（Cookie 登录，账号：%s）", username)
 
@@ -98,10 +96,6 @@ def login():
                         _sync_class_groups_async(datastore, username, password)
                 except Exception:
                     logger.exception("登录后班级同步启动失败（账号：%s）", username)
-                try:
-                    datastore.send_system_notification(f"用户 {username} 于 {utcnow_str()} 登录系统")
-                except Exception:
-                    current_app.logger.exception("发送登录系统通知失败：%s", username)
                 flash("登录成功", "success")
                 next_url = (request.args.get("next") or "").strip()
                 from urllib.parse import urlparse
@@ -125,38 +119,3 @@ def logout():
     flash("已退出登录", "success")
     return redirect(url_for("auth.login"))
 
-
-@bp.route("/register", methods=["GET", "POST"])
-def register():
-    flash("注册功能现已关闭，请直接通过BNDSOJ账号登录", "error")
-    return redirect(url_for("auth.login"))
-    #if not current_user.is_admin:
-    #    flash("只有管理员可以创建用户", "error")
-    #    return redirect(url_for("blog.index"))
-
-    datastore = get_datastore()
-    if request.method == "POST":
-        username = request.form.get("username", "").strip()
-        password = request.form.get("password", "")
-        real_name = request.form.get("real_name", "").strip()
-        role = "user"
-        constant_tags = []
-
-        if not username or not password or not real_name:
-            flash("用户名、真实姓名和密码不能为空", "error")
-        else:
-            try:
-                datastore.create_user(
-                    username=username,
-                    password=password,
-                    role=role,
-                    constant_tags=constant_tags,
-                    real_name=real_name,
-                )
-            except ValueError as exc:
-                flash(str(exc), "error")
-            else:
-                flash("注册成功，请登录", "success")
-                return redirect(url_for("auth.login"))
-
-    return render_template("auth/register.html")

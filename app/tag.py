@@ -2,11 +2,9 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Set
 
-from flask import Blueprint, abort, current_app, render_template, request
-from flask_login import current_user
+from flask import Blueprint, current_app, render_template, request
 
 from .datastore import DataStore
-
 
 bp = Blueprint("tag", __name__)
 

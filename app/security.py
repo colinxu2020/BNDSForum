@@ -1,10 +1,6 @@
 from __future__ import annotations
 
-from pathlib import Path
-from urllib.parse import urlparse, urlunparse
-
 from flask import request, url_for
-
 
 _ALLOWED_REDIRECT_SCHEMES = {"http", "https"}
 

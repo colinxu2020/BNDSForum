@@ -1,19 +1,15 @@
 """Image hosting (图床) blueprint — supports local, S3, and sm.ms backends."""
 from __future__ import annotations
 
-import hashlib
 import logging
 import os
 import re
 import secrets
-import uuid
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
 
 import requests as http_requests
 from flask import (
-    Blueprint, abort, current_app, flash, jsonify, redirect,
-    render_template, request, send_from_directory, url_for,
+    Blueprint, abort, current_app, jsonify, render_template, request, send_from_directory, url_for,
 )
 from flask_login import current_user, login_required
 from werkzeug.utils import secure_filename

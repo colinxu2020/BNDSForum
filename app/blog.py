@@ -15,13 +15,13 @@ from mdit_py_plugins.container import container_plugin
 from mdit_py_plugins.tasklists import tasklists_plugin
 
 from .datastore import DEFAULT_CATEGORY_TAG, DEFAULT_CLASS_TAG, ISO_FORMAT, DataStore
-from .security import login_redirect_target, safe_redirect_target
+from .security import login_redirect_target
 
 
 bp = Blueprint("blog", __name__)
 
 _MATH_SEGMENT_RE = re.compile(
-    r"(\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)|\$\$[\s\S]*?\$\$|\$(?!\$)[^$]*?\$)"
+    r"(\\\[[\s\S]*?\\]|\\\([\s\S]*?\\\)|\$\$[\s\S]*?\$\$|\$(?!\$)[^$]*?\$)"
 )
 _KATEX_PLACEHOLDERS = {
     r"\{": "KATEXLEFTBRACEPLACEHOLDER",
@@ -42,7 +42,7 @@ _CALLOUT_DEFAULT_TITLES = {
     "warning": "Warning",
     "error": "Error",
 }
-_CALLOUT_INFO_RE = re.compile(r"^([\w-]+)(?:\[([^\]]*)\])?(?:\{([^}]*)\})?")
+_CALLOUT_INFO_RE = re.compile(r"^([\w-]+)(?:\[([^]]*)])?(?:\{([^}]*)})?")
 _MENTION_RE = re.compile(r"@([A-Za-z0-9_]{1,32})")
 
 
@@ -463,7 +463,6 @@ def create():
             content=content,
             category_tag=category_value,
             class_tag=class_value,
-            author_constant_tags=None,
             is_hidden=bool(request.form.get("is_hidden")),
         )
         flash("文章创建成功", "success")

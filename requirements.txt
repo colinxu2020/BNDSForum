@@ -5,3 +5,6 @@ markdown-it-py==3.0.0
 mdit-py-plugins==0.4.1
 requests==2.32.3
 qrcode==7.4.2
+
+markupsafe
+boto3
