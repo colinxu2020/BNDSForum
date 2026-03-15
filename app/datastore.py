@@ -441,38 +441,24 @@ class DataStore:
             if "constant_tags" in columns:
                 has_is_banned = "is_banned" in columns
                 # Migration: drop legacy constant_tags column while preserving is_banned values
-                if has_is_banned:
-                    migration_sql = """
-                    PRAGMA foreign_keys=OFF;
-                    ALTER TABLE users RENAME TO users_old;
-                    CREATE TABLE users (
-                        username TEXT PRIMARY KEY,
-                        password_hash TEXT NOT NULL,
-                        role TEXT NOT NULL,
-                        real_name TEXT NOT NULL,
-                        is_banned INTEGER NOT NULL DEFAULT 0
-                    );
-                    INSERT INTO users (username, password_hash, role, real_name, is_banned)
-                    SELECT username, password_hash, role, real_name, COALESCE(is_banned, 0) FROM users_old;
-                    DROP TABLE users_old;
-                    PRAGMA foreign_keys=ON;
-                    """
-                else:
-                    migration_sql = """
-                    PRAGMA foreign_keys=OFF;
-                    ALTER TABLE users RENAME TO users_old;
-                    CREATE TABLE users (
-                        username TEXT PRIMARY KEY,
-                        password_hash TEXT NOT NULL,
-                        role TEXT NOT NULL,
-                        real_name TEXT NOT NULL,
-                        is_banned INTEGER NOT NULL DEFAULT 0
-                    );
-                    INSERT INTO users (username, password_hash, role, real_name, is_banned)
-                    SELECT username, password_hash, role, real_name, 0 FROM users_old;
-                    DROP TABLE users_old;
-                    PRAGMA foreign_keys=ON;
-                    """
+                is_banned_expr = "COALESCE(is_banned, 0)" if has_is_banned else "0"
+                migration_sql = "\n".join(
+                    [
+                        "PRAGMA foreign_keys=OFF;",
+                        "ALTER TABLE users RENAME TO users_old;",
+                        "CREATE TABLE users (",
+                        "    username TEXT PRIMARY KEY,",
+                        "    password_hash TEXT NOT NULL,",
+                        "    role TEXT NOT NULL,",
+                        "    real_name TEXT NOT NULL,",
+                        "    is_banned INTEGER NOT NULL DEFAULT 0",
+                        ");",
+                        "INSERT INTO users (username, password_hash, role, real_name, is_banned)",
+                        "SELECT username, password_hash, role, real_name, " + is_banned_expr + " FROM users_old;",
+                        "DROP TABLE users_old;",
+                        "PRAGMA foreign_keys=ON;",
+                    ]
+                )
                 conn.executescript(migration_sql)
                 columns = {
                     row["name"]
