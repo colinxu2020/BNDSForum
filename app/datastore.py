@@ -90,7 +90,6 @@ class User(UserMixin):
     username: str
     password_hash: str
     role: str = "user"
-    constant_tags: List[str] = field(default_factory=list)
     real_name: str = ""
     is_banned: bool = False
 
@@ -109,7 +108,6 @@ class User(UserMixin):
             "username": self.username,
             "password_hash": self.password_hash,
             "role": self.role,
-            "constant_tags": self.constant_tags,
             "real_name": self.real_name,
             "is_banned": self.is_banned,
         }
@@ -218,7 +216,6 @@ class DataStore:
                     username TEXT PRIMARY KEY,
                     password_hash TEXT NOT NULL,
                     role TEXT NOT NULL,
-                    constant_tags TEXT NOT NULL,
                     real_name TEXT NOT NULL,
                     is_banned INTEGER NOT NULL DEFAULT 0
                 );
@@ -279,10 +276,6 @@ class DataStore:
                 CREATE INDEX IF NOT EXISTS idx_post_favorites_user ON post_favorites(username);
                 CREATE INDEX IF NOT EXISTS idx_post_favorites_post ON post_favorites(post_id);
 
-                CREATE TABLE IF NOT EXISTS constant_tags (
-                    name TEXT PRIMARY KEY
-                );
-
                 CREATE TABLE IF NOT EXISTS class_tags (
                     name TEXT PRIMARY KEY,
                     source TEXT NOT NULL DEFAULT 'manual',
@@ -307,15 +300,6 @@ class DataStore:
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_class_memberships_user ON class_memberships(username);
-
-                CREATE TABLE IF NOT EXISTS tag_nodes (
-                    id TEXT PRIMARY KEY,
-                    tag TEXT,
-                    parent_id TEXT,
-                    FOREIGN KEY(parent_id) REFERENCES tag_nodes(id) ON DELETE CASCADE
-                );
-
-                CREATE INDEX IF NOT EXISTS idx_tag_nodes_parent ON tag_nodes(parent_id);
 
                 CREATE TABLE IF NOT EXISTS private_messages (
                     id TEXT PRIMARY KEY,
@@ -454,6 +438,30 @@ class DataStore:
                 row["name"]
                 for row in conn.execute("PRAGMA table_info(users)")
             }
+            if "constant_tags" in columns:
+                has_is_banned = "is_banned" in columns
+                insert_is_banned = "COALESCE(is_banned, 0)" if has_is_banned else "0"
+                conn.executescript(
+                    f"""
+                    PRAGMA foreign_keys=OFF;
+                    ALTER TABLE users RENAME TO users_old;
+                    CREATE TABLE users (
+                        username TEXT PRIMARY KEY,
+                        password_hash TEXT NOT NULL,
+                        role TEXT NOT NULL,
+                        real_name TEXT NOT NULL,
+                        is_banned INTEGER NOT NULL DEFAULT 0
+                    );
+                    INSERT INTO users (username, password_hash, role, real_name, is_banned)
+                    SELECT username, password_hash, role, real_name, {insert_is_banned} FROM users_old;
+                    DROP TABLE users_old;
+                    PRAGMA foreign_keys=ON;
+                    """
+                )
+                columns = {
+                    row["name"]
+                    for row in conn.execute("PRAGMA table_info(users)")
+                }
             if "is_banned" not in columns:
                 conn.execute("ALTER TABLE users ADD COLUMN is_banned INTEGER NOT NULL DEFAULT 0")
 
@@ -496,6 +504,9 @@ class DataStore:
             if "require_login" not in drive_share_columns:
                 conn.execute("ALTER TABLE drive_shares ADD COLUMN require_login INTEGER NOT NULL DEFAULT 0")
 
+            conn.execute("DROP TABLE IF EXISTS constant_tags")
+            conn.execute("DROP TABLE IF EXISTS tag_nodes")
+
     def _maybe_migrate_legacy(self, conn: sqlite3.Connection) -> None:
         sentinel = self.base_path / ".sqlite_migrated"
         if sentinel.exists():
@@ -519,12 +530,11 @@ class DataStore:
         with conn:
             for user in legacy.get("users", []):
                 conn.execute(
-                    "INSERT OR IGNORE INTO users (username, password_hash, role, constant_tags, real_name) VALUES (?, ?, ?, ?, ?)",
+                    "INSERT OR IGNORE INTO users (username, password_hash, role, real_name) VALUES (?, ?, ?, ?)",
                     (
                         user.get("username"),
                         user.get("password_hash"),
                         user.get("role", "user"),
-                        '[]',
                         user.get("real_name", ""),
                     ),
                 )
@@ -533,9 +543,6 @@ class DataStore:
                     "INSERT OR IGNORE INTO normal_tags (name) VALUES (?)",
                     (tag,),
                 )
-            tree = legacy.get("tag_tree")
-            if tree:
-                conn.execute("DELETE FROM tag_nodes")
             for post in legacy.get("posts", []):
                 conn.execute(
                     "INSERT OR IGNORE INTO posts (id, author, title, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
@@ -704,8 +711,8 @@ class DataStore:
                     default_password = secrets.token_urlsafe(16)
                 password_hash = generate_password_hash(default_password)
                 conn.execute(
-                    "INSERT INTO users (username, password_hash, role, constant_tags, real_name) VALUES (?, ?, ?, ?, ?)",
-                    ("admin", password_hash, "admin", '[]', ""),
+                    "INSERT INTO users (username, password_hash, role, real_name) VALUES (?, ?, ?, ?)",
+                    ("admin", password_hash, "admin", ""),
                 )
                 if generated:
                     password_file = self.base_path / "admin_initial_password.txt"
@@ -737,8 +744,8 @@ class DataStore:
             placeholder_password = generate_password_hash(uuid.uuid4().hex)
             conn.execute(
                 """
-                INSERT INTO users (username, password_hash, role, constant_tags, real_name, is_banned)
-                VALUES (?, ?, 'system', '[]', '', 1)
+                INSERT INTO users (username, password_hash, role, real_name, is_banned)
+                VALUES (?, ?, 'system', '', 1)
                 """,
                 (SYSTEM_USERNAME, placeholder_password),
             )
@@ -748,7 +755,7 @@ class DataStore:
     def list_users(self) -> List[Dict[str, Any]]:
         conn = self._conn()
         rows = conn.execute(
-            "SELECT username, password_hash, role, constant_tags, real_name, is_banned FROM users"
+            "SELECT username, password_hash, role, real_name, is_banned FROM users"
         ).fetchall()
         users: List[Dict[str, Any]] = []
         for row in rows:
@@ -759,7 +766,6 @@ class DataStore:
                     "username": row["username"],
                     "password_hash": row["password_hash"],
                     "role": row["role"],
-                    "constant_tags": [],
                     "real_name": row["real_name"],
                     "is_banned": bool(row["is_banned"]),
                 }
@@ -799,7 +805,7 @@ class DataStore:
     def get_user(self, username: str) -> Optional[Dict[str, Any]]:
         conn = self._conn()
         row = conn.execute(
-            "SELECT username, password_hash, role, constant_tags, real_name, is_banned FROM users WHERE username = ?",
+            "SELECT username, password_hash, role, real_name, is_banned FROM users WHERE username = ?",
             (username,),
         ).fetchone()
         if not row:
@@ -808,7 +814,6 @@ class DataStore:
             "username": row["username"],
             "password_hash": row["password_hash"],
             "role": row["role"],
-            "constant_tags": [],
             "real_name": row["real_name"],
             "is_banned": bool(row["is_banned"]),
         }
@@ -821,7 +826,6 @@ class DataStore:
             username=record["username"],
             password_hash=record["password_hash"],
             role=record.get("role", "user"),
-            constant_tags=[],
             real_name=record.get("real_name", ""),
             is_banned=bool(record.get("is_banned", False)),
         )
@@ -839,12 +843,11 @@ class DataStore:
         password_hash = generate_password_hash(password)
         with conn:
             conn.execute(
-                "INSERT INTO users (username, password_hash, role, constant_tags, real_name) VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO users (username, password_hash, role, real_name) VALUES (?, ?, ?, ?)",
                 (
                     username,
                     password_hash,
                     role,
-                    '[]',
                     real_name.strip(),
                 ),
             )
@@ -932,7 +935,6 @@ class DataStore:
             username=record["username"],
             password_hash=record["password_hash"],
             role=record.get("role", "user"),
-            constant_tags=record.get("constant_tags", []),
             real_name=record.get("real_name", ""),
             is_banned=bool(record.get("is_banned", False)),
         )
@@ -942,7 +944,7 @@ class DataStore:
         password_hash = generate_password_hash(password)
         with conn:
             existing = conn.execute(
-                "SELECT username, role, constant_tags, real_name, is_banned FROM users WHERE username = ?",
+                "SELECT username, role, real_name, is_banned FROM users WHERE username = ?",
                 (remote_user.username,),
             ).fetchone()
             if existing:
@@ -950,28 +952,24 @@ class DataStore:
                     "UPDATE users SET password_hash = ?, real_name = ? WHERE username = ?",
                     (password_hash, remote_user.real_name, remote_user.username),
                 )
-                constant_tags = self._deserialize_tags(existing["constant_tags"])
                 role = existing["role"]
                 is_banned = bool(existing["is_banned"])
             else:
                 conn.execute(
-                    "INSERT INTO users (username, password_hash, role, constant_tags, real_name) VALUES (?, ?, ?, ?, ?)",
+                    "INSERT INTO users (username, password_hash, role, real_name) VALUES (?, ?, ?, ?)",
                     (
                         remote_user.username,
                         password_hash,
                         "user",
-                        json.dumps([], ensure_ascii=False),
                         remote_user.real_name,
                     ),
                 )
-                constant_tags = []
                 role = "user"
                 is_banned = False
         return User(
             username=remote_user.username,
             password_hash=password_hash,
             role=role,
-            constant_tags=constant_tags,
             real_name=remote_user.real_name,
             is_banned=is_banned,
         )
@@ -981,7 +979,7 @@ class DataStore:
         password_hash = generate_password_hash(secrets.token_hex(16))
         with conn:
             existing = conn.execute(
-                "SELECT username, role, constant_tags, real_name, is_banned, password_hash FROM users WHERE username = ?",
+                "SELECT username, role, real_name, is_banned, password_hash FROM users WHERE username = ?",
                 (remote_user.username,),
             ).fetchone()
             if existing:
@@ -990,28 +988,24 @@ class DataStore:
                     "UPDATE users SET real_name = ? WHERE username = ?",
                     (remote_user.real_name, remote_user.username),
                 )
-                constant_tags = self._deserialize_tags(existing["constant_tags"])
                 role = existing["role"]
                 is_banned = bool(existing["is_banned"])
             else:
                 conn.execute(
-                    "INSERT INTO users (username, password_hash, role, constant_tags, real_name) VALUES (?, ?, ?, ?, ?)",
+                    "INSERT INTO users (username, password_hash, role, real_name) VALUES (?, ?, ?, ?)",
                     (
                         remote_user.username,
                         password_hash,
                         "user",
-                        json.dumps([], ensure_ascii=False),
                         remote_user.real_name,
                     ),
                 )
-                constant_tags = []
                 role = "user"
                 is_banned = False
         return User(
             username=remote_user.username,
             password_hash=password_hash,
             role=role,
-            constant_tags=constant_tags,
             real_name=remote_user.real_name,
             is_banned=is_banned,
         )
@@ -2143,12 +2137,6 @@ class DataStore:
                     (name, 1 if is_column else 0),
                 )
 
-    def add_column_tag(self, tag: str) -> None:
-        self.add_normal_tag(tag, is_column=True)
-
-    def remove_column_tag(self, tag: str) -> None:
-        self.remove_normal_tag(tag)
-
     def remove_normal_tag(self, tag: str) -> None:
         conn = self._conn()
         with conn:
@@ -2175,30 +2163,6 @@ class DataStore:
             (*tags, len(tags)),
         ).fetchall()
         return self._build_posts_from_rows(rows)
-
-    def user_has_post_with_tags(self, username: str, required_tags: Iterable[str]) -> bool:
-        tags = self._normalize_tags(required_tags)
-        conn = self._conn()
-        if not tags:
-            result = conn.execute(
-                "SELECT 1 FROM posts WHERE author = ? LIMIT 1",
-                (username,),
-            ).fetchone()
-            return result is not None
-        placeholders = ",".join(["?"] * len(tags))
-        result = conn.execute(
-            f"""
-            SELECT 1
-            FROM posts p
-            JOIN post_tags pt ON p.id = pt.post_id
-            WHERE p.author = ? AND pt.tag IN ({placeholders})
-            GROUP BY p.id
-            HAVING COUNT(DISTINCT pt.tag) = ?
-            LIMIT 1
-            """,
-            (username, *tags, len(tags)),
-        ).fetchone()
-        return result is not None
 
     # Internal helpers -------------------------------------------------
 
