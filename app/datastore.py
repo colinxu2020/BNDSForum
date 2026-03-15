@@ -441,6 +441,7 @@ class DataStore:
             if "constant_tags" in columns:
                 has_is_banned = "is_banned" in columns
                 insert_is_banned = "COALESCE(is_banned, 0)" if has_is_banned else "0"
+                # insert_is_banned is chosen from fixed literals to keep is_banned values while dropping constant_tags
                 conn.executescript(
                     f"""
                     PRAGMA foreign_keys=OFF;
