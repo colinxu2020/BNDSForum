@@ -441,7 +441,7 @@ class DataStore:
             if "constant_tags" in columns:
                 has_is_banned = "is_banned" in columns
                 insert_is_banned = "COALESCE(is_banned, 0)" if has_is_banned else "0"
-                # Preserve existing is_banned values when present; otherwise default to 0 while dropping constant_tags
+                # Migration: drop legacy constant_tags column while preserving is_banned values (defaulting to 0 when absent)
                 conn.executescript(
                     f"""
                     PRAGMA foreign_keys=OFF;
