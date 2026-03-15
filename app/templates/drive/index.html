@@ -62,7 +62,19 @@
 :root[data-theme="dark"] .ctx-menu-item:hover { background:rgba(99,102,241,.15); }
 :root[data-theme="dark"] .share-table-qr,
 :root[data-theme="dark"] .share-create-qr,
-:root[data-theme="dark"] .share-manage-qr { filter:invert(1) brightness(1.15); background:rgba(11,18,32,.98); }
+:root[data-theme="dark"] .share-manage-qr {
+    filter: none !important;
+    background: #fff !important;
+    border: 3px solid #fff !important;
+    padding: 0 !important;
+    display: inline-block;
+}
+:root[data-theme="dark"] .share-table-qr img,
+:root[data-theme="dark"] .share-create-qr img,
+:root[data-theme="dark"] .share-manage-qr img {
+    filter: contrast(100) brightness(0) !important;
+    background: #fff !important;
+}
 </style>
 {% endblock %}
 {% block content %}
@@ -129,8 +141,8 @@
     <div class="ctx-menu-item" data-action="open">打开</div>
     <div class="ctx-menu-item" data-action="rename">重命名</div>
     <div class="ctx-menu-item" data-action="download">下载</div>
-    <div class="ctx-menu-item file-only" data-action="share">🔗 分享文件</div>
-    <div class="ctx-menu-item file-only" data-action="manage-shares">📎 管理分享</div>
+    <div class="ctx-menu-item file-only" data-action="share">分享文件</div>
+    <div class="ctx-menu-item file-only" data-action="manage-shares">管理分享</div>
     <div class="ctx-sep"></div>
     <div class="ctx-menu-item danger" data-action="delete">删除</div>
 </div>

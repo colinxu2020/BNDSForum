@@ -260,7 +260,6 @@ def _decorate_post(
     decorated["author_username"] = post.get("author")
     decorated["author_real_name"] = record.get("real_name", "") if record else ""
     decorated["author_display"] = decorated["author_real_name"] or decorated["author_username"]
-    decorated["author_constant_tags"] = []
     # 注入用户标签 (用于首页/详情页显示)
     if label_map is not None:
         decorated["author_labels"] = label_map.get(decorated["author_username"], [])

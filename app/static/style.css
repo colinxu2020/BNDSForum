@@ -3,7 +3,7 @@
     --bg-gradient: radial-gradient(circle at top, rgba(79, 70, 229, 0.12), transparent 55%),
                    linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
     --bg-color: #f5f7fb;
-    --surface-color: rgba(255, 255, 255, 0.96);
+    --surface-color: rgba(255, 255, 255, 0.82);
     --surface-muted: rgba(255, 255, 255, 0.65);
     --border-color: rgba(15, 23, 42, 0.08);
     --border-strong: rgba(79, 70, 229, 0.25);
@@ -1510,7 +1510,7 @@ textarea.textarea:focus {
     padding: 0.55rem 0.75rem;
     border: 1px solid var(--border-color);
     border-radius: var(--radius-sm);
-    background: rgba(255, 255, 255, 0.6);
+    background: var(--surface-color);
 }
 
 .inline-form {
@@ -1862,7 +1862,7 @@ th {
     }
 
     .tag-manage-list li {
-        background: rgba(30, 41, 59, 0.7);
+        background: var(--surface-color);
         border-color: rgba(148, 163, 184, 0.22);
     }
 
