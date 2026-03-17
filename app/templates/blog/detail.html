@@ -62,9 +62,7 @@
             {% endif %}
         </div>
     </header>
-    <section class="post-body markdown-body">
-        {{ post['content'] | markdown }}
-    </section>
+    <section class="post-body markdown-body" data-markdown-raw="true">{{- post['content'] | e -}}</section>
 </article>
 
 {% if can_edit %}
@@ -117,9 +115,7 @@
                             </form>
                         {% endif %}
                     </div>
-                    <div class="comment-body markdown-body">
-                        {{ comment['content'] | markdown }}
-                    </div>
+                    <div class="comment-body markdown-body" data-markdown-raw="true">{{- comment['content'] | e -}}</div>
                 </article>
             {% endfor %}
         </div>

@@ -169,32 +169,63 @@
                 lineNumbers: !isCompact,
                 lineWrapping: true,
                 scrollbarStyle: 'simple',
-                viewportMargin: isCompact ? 50 : Infinity,
+                viewportMargin: isCompact ? 30 : 80,
                 extraKeys: {
                     Enter: 'newlineAndIndentContinueMarkdownList'
                 }
             });
             cm.setSize('100%', '100%');
 
-            var renderPreview = function () {
+            var lastPreviewValue = null;
+            var renderTimer = null;
+            var postProcessTimer = null;
+
+            var renderPreview = function (forcePostProcess) {
                 if (!preview) {
                     return;
                 }
                 var value = cm.getValue();
+                if (!forcePostProcess && value === lastPreviewValue) {
+                    return;
+                }
                 if (typeof MdKatexRenderer.render !== 'function') {
                     preview.textContent = value;
+                    lastPreviewValue = value;
                     return;
                 }
                 var html = MdKatexRenderer.render(value);
                 preview.innerHTML = html;
-                MdKatexRenderer.applyPostProcessing(preview);
+                lastPreviewValue = value;
+                if (forcePostProcess) {
+                    MdKatexRenderer.applyPostProcessing(preview);
+                    return;
+                }
+                if (postProcessTimer) {
+                    clearTimeout(postProcessTimer);
+                }
+                postProcessTimer = setTimeout(function () {
+                    MdKatexRenderer.applyPostProcessing(preview);
+                }, 220);
             };
 
-            renderPreview();
+            var schedulePreviewRender = function (forcePostProcess) {
+                if (!preview) {
+                    return;
+                }
+                if (renderTimer) {
+                    clearTimeout(renderTimer);
+                }
+                var delay = forcePostProcess ? 0 : 140;
+                renderTimer = setTimeout(function () {
+                    renderPreview(forcePostProcess);
+                }, delay);
+            };
+
+            renderPreview(true);
 
             var requiredMessage = textarea.getAttribute('data-required-message') || '';
             var handleChange = function () {
-                renderPreview();
+                schedulePreviewRender(false);
                 if (!requiredMessage) {
                     return;
                 }
@@ -208,6 +239,9 @@
             };
 
             cm.on('change', handleChange);
+            cm.on('blur', function () {
+                schedulePreviewRender(true);
+            });
 
             var form = container.closest('form');
             if (form) {

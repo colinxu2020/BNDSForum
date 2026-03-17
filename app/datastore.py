@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import secrets
 import sqlite3
 import time
@@ -195,12 +196,104 @@ class DataStore:
                 return
             conn = self._conn()
             self._ensure_schema(conn)
+            self._repair_users_old_foreign_keys(conn)
             self._maybe_migrate_legacy(conn)
             self._ensure_tag_defaults(conn)
             self._migrate_post_tag_columns(conn)
             self._bootstrap_admin(conn)
             self._ensure_system_user(conn)
             self._setup_complete = True
+
+    @staticmethod
+    def _quote_identifier(identifier: str) -> str:
+        return '"' + identifier.replace('"', '""') + '"'
+
+    @classmethod
+    def _rename_create_table_sql(cls, create_sql: str, old_name: str, new_name: str) -> str:
+        pattern = re.compile(
+            r'^(\s*CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?)([`"\[]?)'
+            + re.escape(old_name)
+            + r'([`"\]]?)',
+            re.IGNORECASE,
+        )
+        return pattern.sub(r'\1"' + new_name + r'"', create_sql, count=1)
+
+    @classmethod
+    def _rewrite_users_old_reference(cls, create_sql: str) -> str:
+        return re.sub(
+            r'(?i)REFERENCES\s+[`"\[]?users_old[`"\]]?',
+            'REFERENCES users',
+            create_sql,
+        )
+
+    @classmethod
+    def _rebuild_table_with_sql(cls, conn: sqlite3.Connection, table_name: str, new_create_sql: str) -> None:
+        temp_name = f"__tmp_fkfix__{table_name}"
+        quoted_table = cls._quote_identifier(table_name)
+        quoted_temp = cls._quote_identifier(temp_name)
+        index_rows = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name = ? AND sql IS NOT NULL",
+            (table_name,),
+        ).fetchall()
+        trigger_rows = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type='trigger' AND tbl_name = ? AND sql IS NOT NULL",
+            (table_name,),
+        ).fetchall()
+
+        conn.execute(new_create_sql)
+        conn.execute(f"INSERT INTO {quoted_temp} SELECT * FROM {quoted_table}")
+        conn.execute(f"DROP TABLE {quoted_table}")
+        conn.execute(f"ALTER TABLE {quoted_temp} RENAME TO {quoted_table}")
+
+        for row in index_rows:
+            sql = row["sql"]
+            if sql:
+                conn.execute(sql)
+        for row in trigger_rows:
+            sql = row["sql"]
+            if sql:
+                conn.execute(sql)
+
+    @classmethod
+    def _repair_users_old_foreign_keys(cls, conn: sqlite3.Connection) -> None:
+        table_rows = conn.execute(
+            "SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+        ).fetchall()
+        table_sql_map = {
+            row["name"]: row["sql"]
+            for row in table_rows
+            if row["name"] and row["sql"]
+        }
+        if "users_old" not in table_sql_map and "users" not in table_sql_map:
+            return
+
+        tables_to_rebuild: List[str] = []
+        for table_name in table_sql_map.keys():
+            fk_rows = conn.execute(f"PRAGMA foreign_key_list({cls._quote_identifier(table_name)})").fetchall()
+            if any(fk["table"] == "users_old" for fk in fk_rows):
+                tables_to_rebuild.append(table_name)
+
+        if not tables_to_rebuild:
+            return
+
+        conn.execute("PRAGMA foreign_keys=OFF")
+        try:
+            with conn:
+                for table_name in tables_to_rebuild:
+                    original_sql = table_sql_map.get(table_name)
+                    if not original_sql:
+                        continue
+                    replaced_sql = cls._rewrite_users_old_reference(original_sql)
+                    if replaced_sql == original_sql:
+                        continue
+                    replaced_sql = cls._rename_create_table_sql(
+                        replaced_sql,
+                        table_name,
+                        f"__tmp_fkfix__{table_name}",
+                    )
+                    cls._rebuild_table_with_sql(conn, table_name, replaced_sql)
+        finally:
+            conn.execute("PRAGMA foreign_keys=ON")
 
     @staticmethod
     def _ensure_schema(conn: sqlite3.Connection) -> None:

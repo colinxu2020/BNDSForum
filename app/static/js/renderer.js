@@ -21,7 +21,7 @@
         error: 'Error'
     };
     var CALLOUT_PATTERN = /^([\w-]+)(?:\[([^\]]*)\])?(?:\{([^}]*)\})?/;
-    var MATH_SEGMENT_RE = /(\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)|\$(?!\$)[^$]*?\$)/g;
+    var MATH_SEGMENT_RE = /(\$\$\$[\s\S]*?\$\$\$|\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)|\$(?!\$)[^$]*?\$)/g;
     var KATEX_BRACE_PLACEHOLDERS = {
         '\\{': 'KATEXLEFTBRACEPLACEHOLDER',
         '\\}': 'KATEXRIGHTBRACEPLACEHOLDER',
@@ -78,8 +78,17 @@
         if (!html || html.indexOf('<br') === -1) {
             return html;
         }
-        return html.replace(/(\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\])/g, function (segment) {
+        return html.replace(/(\$\$\$[\s\S]*?\$\$\$|\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\])/g, function (segment) {
             return segment.replace(/<br\s*\/?>(?=\s*\n)/gi, '\n');
+        });
+    }
+
+    function normalizeTripleDollarMath(source) {
+        if (!source || source.indexOf('$$$') === -1) {
+            return source || '';
+        }
+        return source.replace(/\$\$\$([\s\S]*?)\$\$\$/g, function (_all, body) {
+            return '$$\n' + body.replace(/^\n+|\n+$/g, '') + '\n$$';
         });
     }
 
@@ -208,9 +217,26 @@
         if (!md) {
             return source || '';
         }
-        var protectedSource = protectKatexBraces(source || '');
+        var normalizedSource = normalizeTripleDollarMath(source || '');
+        var protectedSource = protectKatexBraces(normalizedSource);
         var html = md.render(protectedSource);
         return normalizeMathHtml(restoreKatexBraces(html));
+    }
+
+    function renderRawMarkdownElements(root) {
+        var scope = root || document;
+        if (!scope || !scope.querySelectorAll) {
+            return;
+        }
+        scope.querySelectorAll('[data-markdown-raw="true"]').forEach(function (section) {
+            if (section.hasAttribute('data-md-enhanced')) {
+                return;
+            }
+            var source = section.textContent || '';
+            section.innerHTML = renderMarkdown(source);
+            section.setAttribute('data-md-enhanced', 'true');
+            applyPostProcessing(section);
+        });
     }
 
     function applyHighlight(target) {
@@ -237,6 +263,7 @@
         }
         renderMathInElement(target, {
             delimiters: [
+                { left: '$$$', right: '$$$', display: true },
                 { left: '$$', right: '$$', display: true },
                 { left: '$', right: '$', display: false },
                 { left: '\\(', right: '\\)', display: false },
@@ -273,6 +300,7 @@
         renderInline: renderInline,
         applyPostProcessing: applyPostProcessing,
         enhanceStaticMarkdown: enhanceStaticMarkdown,
+        renderRawMarkdownElements: renderRawMarkdownElements,
         protectKatexBraces: protectKatexBraces,
         restoreKatexBraces: restoreKatexBraces
     };
@@ -282,6 +310,7 @@
             if (!configure()) {
                 return;
             }
+            renderRawMarkdownElements(document);
             enhanceStaticMarkdown();
         };
         if (document.readyState === 'loading') {

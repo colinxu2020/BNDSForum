@@ -21,7 +21,7 @@ from .security import login_redirect_target
 bp = Blueprint("blog", __name__)
 
 _MATH_SEGMENT_RE = re.compile(
-    r"(\\\[[\s\S]*?\\]|\\\([\s\S]*?\\\)|\$\$[\s\S]*?\$\$|\$(?!\$)[^$]*?\$)"
+    r"(\$\$\$[\s\S]*?\$\$\$|\\\[[\s\S]*?\\]|\\\([\s\S]*?\\\)|\$\$[\s\S]*?\$\$|\$(?!\$)[^$]*?\$)"
 )
 _KATEX_PLACEHOLDERS = {
     r"\{": "KATEXLEFTBRACEPLACEHOLDER",

@@ -381,9 +381,7 @@
                         </div>
                     </header>
                     {% if post['content'] %}
-                    <div class="post-excerpt markdown-body clamp-4" data-md-enhanced="true">
-                        {{ post['content'] | markdown }}
-                    </div>
+                    <div class="post-excerpt markdown-body clamp-4" data-markdown-raw="true">{{- post['content'] | e -}}</div>
                     {% endif %}
                     <div class="post-footer">
                         <a class="link-more" href="{{ url_for('blog.detail', post_id=post['id']) }}">阅读全文</a>
