@@ -2670,3 +2670,9 @@ html {
 :root[data-theme="light"] .user-label--gray   { background: #f1f5f9; color: #475569; }
 :root[data-theme="light"] .user-label--yellow { background: #fef9c3; color: #a16207; }
 :root[data-theme="light"] .user-label--pink   { background: #fce7f3; color: #be185d; }
+
+.katex-display {
+    max-width: 100%;
+    overflow-x: auto !important;
+    overflow-y: hidden;
+}
