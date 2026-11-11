@@ -149,11 +149,13 @@ def dashboard():
     users = datastore.list_users()
     category_tags = datastore.list_category_tags()
     class_tags = datastore.list_class_tags(with_meta=True, auto_sync=True)
+    class_sync_status = datastore.class_sync_status()
     return render_template(
         "admin/dashboard.html",
         users=users,
         category_tags=category_tags,
         class_tags=class_tags,
+        class_sync_status=class_sync_status,
     )
 
 
@@ -373,6 +375,72 @@ def delete_class_tag():
     datastore.remove_class_tag(tag_name)
     flash("班级标签已删除", "success")
     _notify_admins(f"管理员 {current_user.username} 删除班级标签：{tag_name}")
+    return redirect(url_for("admin.dashboard"))
+
+
+@bp.route("/class-sync/force", methods=["POST"])
+@login_required
+def force_class_sync():
+    if not current_user.is_admin:
+        return redirect(url_for("blog.index"))
+
+    username = request.form.get("oj_username", "").strip()
+    password = request.form.get("oj_password", "")
+    phpsessid = request.form.get("oj_phpsessid", "").strip()
+
+    datastore = get_datastore()
+    if phpsessid:
+        result = datastore.update_class_groups_from_cookie(phpsessid, force=True)
+        credential_kind = "PHPSESSID"
+    elif username and password:
+        result = datastore.update_class_groups_from_credentials(username, password, force=True)
+        credential_kind = "用户名/密码"
+    else:
+        flash("请输入 BNDSOJ 用户名和密码，或填写 PHPSESSID。凭据不会被保存。", "error")
+        return redirect(url_for("admin.dashboard"))
+
+    status = result.get("status")
+    if status == "success":
+        group_count = int(result.get("group_count") or 0)
+        flash(f"已从 BNDSOJ 强制重新同步：获取到 {group_count} 个小组。", "success")
+        _notify_admins(
+            f"管理员 {current_user.username} 使用手动输入的 {credential_kind} 强制同步 BNDSOJ 小组"
+        )
+    elif status == "locked":
+        lock_started_at = result.get("lock_started_at") or "未知"
+        current_app.logger.warning(
+            "管理员强制同步 BNDSOJ 被并发锁阻止：admin=%s lock_started_at=%s",
+            current_user.username,
+            lock_started_at,
+        )
+        flash(
+            "强制同步未执行：已有班级同步任务正在运行，"
+            f"并发锁创建时间为 {lock_started_at}（UTC）。"
+            "强制同步只绕过 5 分钟节流，不会绕过并发锁。"
+            "如果超过 10 分钟仍显示此提示，请检查服务日志或残留锁。",
+            "error",
+        )
+    elif status == "rate_limited":
+        last_run = result.get("last_run") or "未知"
+        flash(
+            f"同步被 5 分钟节流阻止（上次成功同步：{last_run} UTC）。"
+            "这不应发生在强制同步路径，请检查后端 force 参数。",
+            "error",
+        )
+    elif status == "invalid_credentials":
+        flash("BNDSOJ 凭据无效或登录状态已过期，未执行同步。", "error")
+    elif status == "account_not_found":
+        flash("BNDSOJ 账号不存在或不可访问，未执行同步。", "error")
+    elif status == "service_unavailable":
+        detail = result.get("detail") or "未知错误"
+        flash(f"无法访问 BNDSOJ，强制同步失败：{detail}", "error")
+    elif status == "empty":
+        flash("BNDSOJ 未返回可用的小组数据；为避免误删，现有小组成员数据已保留。", "error")
+    elif status == "disabled":
+        flash("BNDSOJ 客户端未启用，无法同步。", "error")
+    else:
+        flash(f"BNDSOJ 强制同步未完成（状态：{status or 'unknown'}）。", "error")
+
     return redirect(url_for("admin.dashboard"))
 
 

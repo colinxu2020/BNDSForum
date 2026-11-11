@@ -143,11 +143,11 @@ class DataStore:
         if not value:
             return None
         try:
-            return datetime.strptime(value, ISO_FORMAT)
+            return datetime.strptime(value, ISO_FORMAT).replace(tzinfo=timezone.utc)
         except ValueError:
             return None
 
-    def _try_acquire_class_sync_lock(self, now: datetime) -> bool:
+    def _try_acquire_class_sync_lock(self, now: datetime, *, force: bool = False) -> Tuple[bool, Optional[str]]:
         conn = self._conn()
         lock_key = "class_sync_lock"
         last_run_key = "class_sync_last_run"
@@ -157,9 +157,9 @@ class DataStore:
                 (last_run_key,),
             ).fetchone()
             last_run = self._parse_timestamp(last_run_row["value"] if last_run_row else None)
-            if last_run and now - last_run < CLASS_SYNC_INTERVAL:
+            if not force and last_run and now - last_run < CLASS_SYNC_INTERVAL:
                 logger.debug("跳过班级同步：上次同步距今不足 %s", CLASS_SYNC_INTERVAL)
-                return False
+                return False, "rate_limited"
 
             lock_row = conn.execute(
                 "SELECT value FROM metadata WHERE key = ?",
@@ -168,13 +168,29 @@ class DataStore:
             lock_timestamp = self._parse_timestamp(lock_row["value"] if lock_row else None)
             if lock_timestamp and now - lock_timestamp < CLASS_SYNC_LOCK_STALE:
                 logger.debug("跳过班级同步：已有进行中的同步任务（%s 前启动）", lock_timestamp)
-                return False
+                return False, "locked"
 
             conn.execute(
                 "INSERT INTO metadata (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
                 (lock_key, now.strftime(ISO_FORMAT)),
             )
-            return True
+            return True, None
+
+    def class_sync_status(self) -> Dict[str, Any]:
+        """Return sync timestamps/lock state for the admin debug UI."""
+        now = datetime.now(timezone.utc)
+        last_run = self._get_metadata_value("class_sync_last_run")
+        lock_started_at = self._get_metadata_value("class_sync_lock")
+        lock_timestamp = self._parse_timestamp(lock_started_at)
+        lock_active = bool(
+            lock_timestamp
+            and now - lock_timestamp < CLASS_SYNC_LOCK_STALE
+        )
+        return {
+            "last_run": last_run,
+            "lock_started_at": lock_started_at,
+            "lock_active": lock_active,
+        }
 
     def _release_class_sync_lock(self) -> None:
         conn = self._conn()
@@ -1873,42 +1889,69 @@ class DataStore:
         ).fetchall()
         return [row["class_tag"] for row in rows]
 
-    def update_class_groups_from_credentials(self, username: str, password: str) -> None:
+    def update_class_groups_from_credentials(
+        self,
+        username: str,
+        password: str,
+        *,
+        force: bool = False,
+    ) -> Dict[str, Any]:
         if not self._oj_client:
-            return
+            return {"status": "disabled"}
         now = datetime.now(timezone.utc)
-        if not self._try_acquire_class_sync_lock(now):
-            return
+        acquired, blocked_reason = self._try_acquire_class_sync_lock(now, force=force)
+        if not acquired:
+            result: Dict[str, Any] = {"status": blocked_reason or "blocked"}
+            if blocked_reason == "locked":
+                result["lock_started_at"] = self._get_metadata_value("class_sync_lock")
+            elif blocked_reason == "rate_limited":
+                result["last_run"] = self._get_metadata_value("class_sync_last_run")
+            return result
         try:
             groups = self._fetch_groups_with_retry(username, password)
             if self._sync_class_groups(groups):
                 self._set_metadata_value("class_sync_last_run", now.strftime(ISO_FORMAT))
+                return {"status": "success", "group_count": len(groups)}
+            return {"status": "empty"}
         except OJInvalidCredentials:
-            return
+            return {"status": "invalid_credentials"}
         except OJAccountNotFound:
             self.send_system_notification(f"班级同步失败：OJ 账号 {username} 不存在或不可访问。")
-            return
+            return {"status": "account_not_found"}
         except OJServiceUnavailable as exc:
             self.send_system_notification(f"班级同步失败：无法访问 BNDSOJ（{exc}）。")
-            return
+            return {"status": "service_unavailable", "detail": str(exc)}
         finally:
             self._release_class_sync_lock()
 
-    def update_class_groups_from_cookie(self, phpsessid: str) -> None:
+    def update_class_groups_from_cookie(
+        self,
+        phpsessid: str,
+        *,
+        force: bool = False,
+    ) -> Dict[str, Any]:
         if not self._oj_client:
-            return
+            return {"status": "disabled"}
         now = datetime.now(timezone.utc)
-        if not self._try_acquire_class_sync_lock(now):
-            return
+        acquired, blocked_reason = self._try_acquire_class_sync_lock(now, force=force)
+        if not acquired:
+            result: Dict[str, Any] = {"status": blocked_reason or "blocked"}
+            if blocked_reason == "locked":
+                result["lock_started_at"] = self._get_metadata_value("class_sync_lock")
+            elif blocked_reason == "rate_limited":
+                result["last_run"] = self._get_metadata_value("class_sync_last_run")
+            return result
         try:
             groups = self._fetch_groups_with_retry_cookie(phpsessid)
             if self._sync_class_groups(groups):
                 self._set_metadata_value("class_sync_last_run", now.strftime(ISO_FORMAT))
+                return {"status": "success", "group_count": len(groups)}
+            return {"status": "empty"}
         except OJInvalidCredentials:
-            return
+            return {"status": "invalid_credentials"}
         except OJServiceUnavailable as exc:
             self.send_system_notification(f"班级同步失败：无法访问 BNDSOJ（{exc}）。")
-            return
+            return {"status": "service_unavailable", "detail": str(exc)}
         finally:
             self._release_class_sync_lock()
 

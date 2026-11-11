@@ -41,7 +41,46 @@
 
     <div class="card">
         <h2>班级标签</h2>
-        <p class="form-tip">支持本地维护与 OJ 小组同步的标签，可多选过滤。</p>
+        <p class="form-tip">支持本地维护与 OJ 小组同步的标签，可多选过滤。强制同步会重新抓取 BNDSOJ 小组及成员。</p>
+
+        <h3>从 BNDSOJ 强制重新同步</h3>
+        <p class="form-tip">
+            每次手动输入凭据；用户名、密码和 PHPSESSID 都不会保存到数据库。
+            可填写“用户名 + 密码”，或只填写 PHPSESSID。强制同步会绕过 5 分钟节流，但不会绕过并发锁。
+        </p>
+        <p class="form-tip">
+            上次成功同步：{{ class_sync_status.last_run or '暂无记录' }}
+        </p>
+        {% if class_sync_status.lock_active %}
+            <p class="form-tip">
+                <strong>调试提示：</strong>
+                当前检测到有效同步锁（{{ class_sync_status.lock_started_at }} UTC）。
+                此时点击强制同步会被明确阻止；锁超过 10 分钟后会被视为过期。
+            </p>
+        {% endif %}
+        <form class="form-grid" method="post" action="{{ url_for('admin.force_class_sync') }}">
+            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+            <div class="form-field">
+                <label for="oj_sync_username">BNDSOJ 用户名（密码登录时必填）</label>
+                <input type="text" id="oj_sync_username" name="oj_username" autocomplete="off">
+            </div>
+            <div class="form-field">
+                <label for="oj_sync_password">BNDSOJ 密码</label>
+                <input type="password" id="oj_sync_password" name="oj_password" autocomplete="off">
+            </div>
+            <div class="form-field">
+                <label for="oj_sync_phpsessid">PHPSESSID（可替代用户名 + 密码）</label>
+                <input type="password" id="oj_sync_phpsessid" name="oj_phpsessid" autocomplete="off">
+            </div>
+            <div>
+                <button type="submit" class="button primary" onclick="return confirm('确定立即从 BNDSOJ 强制重新同步全部小组和成员吗？');">
+                    立即强制同步
+                </button>
+            </div>
+        </form>
+
+        <hr>
+        <p class="form-tip">下面维护可选的班级标签。</p>
         <form class="form-inline" method="post" action="{{ url_for('admin.add_class_tag') }}">
             <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
             <label class="sr-only" for="class_tag_name">新增班级标签</label>
