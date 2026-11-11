@@ -2107,6 +2107,44 @@ th {
     font-size: 0.75rem;
     color: var(--text-subtle);
     margin-bottom: 0.3rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.message-recall-form {
+    display: inline;
+}
+
+.recall-button {
+    border: none;
+    background: none;
+    padding: 0;
+    font-size: 0.75rem;
+    color: inherit;
+    opacity: 0.75;
+    cursor: pointer;
+    text-decoration: underline;
+}
+
+.recall-button:hover {
+    opacity: 1;
+}
+
+.message-item.is-recalled {
+    background: rgba(148, 163, 184, 0.12);
+    color: var(--text-muted);
+    box-shadow: none;
+}
+
+.message-item.is-recalled .message-meta,
+.message-item.is-recalled .message-body {
+    color: var(--text-subtle);
+}
+
+.recalled-note {
+    font-style: italic;
 }
 
 .message-item.from-self .message-meta {

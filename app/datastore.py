@@ -53,6 +53,7 @@ logger = logging.getLogger(__name__)
 CLASS_SYNC_INTERVAL = timedelta(minutes=5)
 CLASS_SYNC_LOCK_STALE = timedelta(minutes=10)
 SYSTEM_USERNAME = "SYSTEM"
+MESSAGE_RECALL_WINDOW = timedelta(minutes=2)
 
 
 class SQLiteConnectionManager:
@@ -418,6 +419,7 @@ class DataStore:
                     created_at TEXT NOT NULL,
                     is_read INTEGER NOT NULL DEFAULT 0,
                     is_system INTEGER NOT NULL DEFAULT 0,
+                    recalled_at TEXT,
                     FOREIGN KEY(sender) REFERENCES users(username) ON DELETE CASCADE,
                     FOREIGN KEY(recipient) REFERENCES users(username) ON DELETE CASCADE
                 );
@@ -614,6 +616,13 @@ class DataStore:
                 conn.execute("ALTER TABLE drive_shares ADD COLUMN max_downloads INTEGER")
             if "require_login" not in drive_share_columns:
                 conn.execute("ALTER TABLE drive_shares ADD COLUMN require_login INTEGER NOT NULL DEFAULT 0")
+
+            private_message_columns = {
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(private_messages)")
+            }
+            if "recalled_at" not in private_message_columns:
+                conn.execute("ALTER TABLE private_messages ADD COLUMN recalled_at TEXT")
 
             conn.execute("DROP TABLE IF EXISTS constant_tags")
             conn.execute("DROP TABLE IF EXISTS tag_nodes")
@@ -1413,6 +1422,8 @@ class DataStore:
             "created_at": row["created_at"],
             "is_read": bool(row["is_read"]),
             "is_system": bool(row["is_system"]),
+            "recalled_at": row["recalled_at"],
+            "is_recalled": bool(row["recalled_at"]),
         }
 
     def get_message_preference(self, owner: str, other_user: str) -> MessagePreference:
@@ -1504,6 +1515,8 @@ class DataStore:
             "created_at": timestamp,
             "is_read": False,
             "is_system": is_system,
+            "recalled_at": None,
+            "is_recalled": False,
         }
 
     def list_admin_users(self) -> List[Dict[str, Any]]:
@@ -1549,6 +1562,7 @@ class DataStore:
                     created_at,
                     is_read,
                     is_system,
+                    recalled_at,
                     CASE WHEN sender = :username THEN recipient ELSE sender END AS other_user
                 FROM private_messages
                 WHERE sender = :username OR recipient = :username
@@ -1562,6 +1576,7 @@ class DataStore:
                     created_at,
                     is_read,
                     is_system,
+                    recalled_at,
                     other_user,
                     ROW_NUMBER() OVER (PARTITION BY other_user ORDER BY created_at DESC) AS rn
                 FROM base
@@ -1582,6 +1597,7 @@ class DataStore:
                 r.content,
                 r.created_at,
                 r.is_system,
+                r.recalled_at,
                 COALESCE(u.unread_count, 0) AS unread_count,
                 COALESCE(pref.preference, :default_pref) AS preference
             FROM ranked AS r
@@ -1605,9 +1621,10 @@ class DataStore:
                         "id": row["id"],
                         "sender": row["sender"],
                         "recipient": row["recipient"],
-                        "content": row["content"],
+                        "content": "消息已撤回" if row["recalled_at"] else row["content"],
                         "created_at": row["created_at"],
                         "is_system": bool(row["is_system"]),
+                        "is_recalled": bool(row["recalled_at"]),
                     },
                     "unread_count": int(row["unread_count"]),
                     "preference": row["preference"],
@@ -1623,7 +1640,7 @@ class DataStore:
     ) -> List[Dict[str, Any]]:
         params: List[Any] = [username, other_user, other_user, username]
         query = """
-            SELECT id, sender, recipient, content, created_at, is_read, is_system
+            SELECT id, sender, recipient, content, created_at, is_read, is_system, recalled_at
             FROM private_messages
             WHERE (sender = ? AND recipient = ?) OR (sender = ? AND recipient = ?)
             ORDER BY created_at ASC
@@ -1634,6 +1651,36 @@ class DataStore:
         conn = self._conn()
         rows = conn.execute(query, params).fetchall()
         return [self._message_row_to_dict(row) for row in rows]
+
+    def recall_private_message(self, message_id: str, username: str) -> Dict[str, Any]:
+        conn = self._conn()
+        row = conn.execute(
+            """
+            SELECT id, sender, recipient, content, created_at, is_read, is_system, recalled_at
+            FROM private_messages
+            WHERE id = ?
+            """,
+            (message_id,),
+        ).fetchone()
+        if not row:
+            raise ValueError("消息不存在")
+        if row["sender"] != username:
+            raise ValueError("只能撤回自己发送的消息")
+        if row["recalled_at"]:
+            raise ValueError("该消息已撤回")
+        created_at = self._parse_timestamp(row["created_at"])
+        if created_at is None or datetime.now(timezone.utc) - created_at > MESSAGE_RECALL_WINDOW:
+            raise ValueError("发送已超过 2 分钟，无法撤回")
+        recalled_at = utcnow_str()
+        with conn:
+            conn.execute(
+                "UPDATE private_messages SET recalled_at = ? WHERE id = ?",
+                (recalled_at, message_id),
+            )
+        record = self._message_row_to_dict(row)
+        record["recalled_at"] = recalled_at
+        record["is_recalled"] = True
+        return record
 
     def mark_conversation_read(self, username: str, other_user: str) -> None:
         conn = self._conn()

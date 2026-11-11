@@ -92,11 +92,27 @@
                 <div class="messages-list">
                     {% if messages %}
                         {% for message in messages %}
-                            <article class="message-item {% if message.is_outgoing %}from-self{% else %}from-them{% endif %}">
-                                <div class="message-meta">{{ message.created_at }}</div>
-                                <div class="message-body">
-                                    {{ message.content | e | urlize | replace('\n', '<br>') | safe }}
+                            <article class="message-item {% if message.is_outgoing %}from-self{% else %}from-them{% endif %}{% if message.is_recalled %} is-recalled{% endif %}">
+                                <div class="message-meta">
+                                    <span>{{ message.created_at }}</span>
+                                    {% if message.can_recall %}
+                                        <form method="post"
+                                              action="{{ url_for('messages.recall_message', message_id=message.id) }}"
+                                              class="message-recall-form"
+                                              onsubmit="return confirm('确定撤回这条消息吗？');">
+                                            <input type="hidden" name="_csrf_token" value="{{ csrf_token() }}">
+                                            <input type="hidden" name="with" value="{{ selected_username }}">
+                                            <button type="submit" class="recall-button">撤回</button>
+                                        </form>
+                                    {% endif %}
                                 </div>
+                                {% if message.is_recalled %}
+                                    <div class="message-body recalled-note">此消息已撤回</div>
+                                {% else %}
+                                    <div class="message-body">
+                                        {{ message.content | e | urlize | replace('\n', '<br>') | safe }}
+                                    </div>
+                                {% endif %}
                             </article>
                         {% endfor %}
                     {% else %}
@@ -125,4 +141,21 @@
         </section>
     </div>
 </div>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+    (function () {
+        function scrollToLatestMessage() {
+            var list = document.querySelector('.messages-list');
+            if (!list) return;
+            list.scrollTop = list.scrollHeight;
+            var last = list.lastElementChild;
+            if (last && last.scrollIntoView) {
+                last.scrollIntoView({ block: 'end' });
+            }
+        }
+        scrollToLatestMessage();
+        window.addEventListener('load', scrollToLatestMessage);
+    }());
+</script>
 {% endblock %}

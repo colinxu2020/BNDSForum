@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Dict, List, cast
 
 from flask import Blueprint, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 
 from .datastore import (
-    DataStore,
+    ISO_FORMAT,
     MESSAGE_PREFERENCES,
     MESSAGE_PREFERENCE_DEFAULT,
+    MESSAGE_RECALL_WINDOW,
+    DataStore,
     MessagePreference,
     SYSTEM_USERNAME,
 )
@@ -43,6 +46,17 @@ def _display_name(record: Dict[str, object] | None, username: str) -> str:
     if real_name:
         return f"{real_name}（{username}）"
     return username
+
+
+def _can_recall(message: Dict[str, object], username: str, now: datetime) -> bool:
+    if message.get("is_recalled") or message.get("sender") != username:
+        return False
+    created_raw = str(message.get("created_at") or "")
+    try:
+        created_at = datetime.strptime(created_raw, ISO_FORMAT).replace(tzinfo=timezone.utc)
+    except ValueError:
+        return False
+    return now - created_at <= MESSAGE_RECALL_WINDOW
 
 
 def _user_brief(datastore: DataStore, username: str) -> Dict[str, object]:
@@ -103,10 +117,12 @@ def inbox():
         if not target_user and selected_username != SYSTEM_USERNAME:
             flash("未找到目标用户", "error")
             return redirect(_inbox_url())
+        now = datetime.now(timezone.utc)
         thread_messages = [
             {
                 **message,
                 "is_outgoing": message["sender"] == current_username,
+                "can_recall": _can_recall(message, current_username, now),
             }
             for message in datastore.get_conversation_messages(current_username, selected_username)
         ]
@@ -173,6 +189,21 @@ def send():
     else:
         flash("私信已发送", "success")
     return redirect(_inbox_url(recipient))
+
+
+@bp.route("/recall/<message_id>", methods=["POST"])
+@login_required
+def recall_message(message_id: str):
+    datastore = get_datastore()
+    fallback_user = (request.form.get("with") or "").strip() or None
+    try:
+        record = datastore.recall_private_message(message_id, current_user.username)
+    except ValueError as exc:
+        flash(str(exc), "error")
+        return redirect(_inbox_url(fallback_user))
+    flash("消息已撤回", "success")
+    other_user = record["recipient"] if record["sender"] == current_user.username else record["sender"]
+    return redirect(_inbox_url(other_user))
 
 
 @bp.route("/preference/<username>", methods=["POST"])
