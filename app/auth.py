@@ -97,11 +97,17 @@ def login():
                 except Exception:
                     logger.exception("登录后班级同步启动失败（账号：%s）", username)
                 flash("登录成功", "success")
-                next_url = (request.args.get("next") or "").strip()
-                from urllib.parse import urlparse
-                if not next_url or urlparse(next_url).netloc != "" or not next_url.startswith("/") or next_url.startswith("//"):
-                    next_url = url_for("blog.index")
-                return redirect(next_url)
+                # The public deployment is mounted at /blog/ by the reverse proxy,
+                # while Flask may still see blog.index as "/". Always redirect to
+                # the public HTTPS blog root after login. If SCRIPT_NAME/proxy
+                # configuration already makes url_for include /blog, avoid adding
+                # the prefix a second time.
+                external_index = url_for("blog.index", _external=True, _scheme="https").rstrip("/")
+                if external_index.endswith("/blog"):
+                    login_target = external_index + "/"
+                else:
+                    login_target = external_index + "/blog/"
+                return redirect(login_target)
             else:
                 flash("登录失败，请联系管理员", "error")
         resolved_username = username or resolved_username
